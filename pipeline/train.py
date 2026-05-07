@@ -128,7 +128,7 @@ def run_cross_validation(
     best_state     = None
 
     for fold, (tr_idx, val_idx) in enumerate(skf.split(X, y.astype(int)), start=1):
-        print(f"    [CV] Fold {fold}/{n_folds}")
+        print(f"    [CV] Fold {fold}/{n_folds}", flush=True)
 
         X_tr, y_tr = X[tr_idx], y[tr_idx]
         X_val, y_val = X[val_idx], y[val_idx]
@@ -175,7 +175,7 @@ def run_cross_validation(
             else:
                 no_improve += 1
                 if no_improve >= patience:
-                    print(f"    [CV] Early stopping at epoch {epoch}")
+                    print(f"    [CV] Early stopping at epoch {epoch}", flush=True)
                     break
 
         # Evaluate this fold on its val set
@@ -190,7 +190,7 @@ def run_cross_validation(
                   f"Acc={fold_m['accuracy']:.4f}  F1={fold_m['f1']:.4f}  AUC={fold_m.get('roc_auc', 0):.4f}")
         else:
             print(f"    [CV] Fold {fold} -> "
-                  f"Acc={fold_m['accuracy']:.4f}  F1 (Macro)={fold_m['f1']:.4f}")
+                  f"Acc={fold_m['accuracy']:.4f}  F1 (Macro)={fold_m['f1']:.4f}", flush=True)
 
         # Track globally best state
         if best_fold_loss < best_val_loss:
@@ -238,7 +238,7 @@ def train_and_evaluate_subject(
     subject_results = {}
 
     for model_name, model_cls in model_registry.items():
-        print(f"\n  -- {model_name} --")
+        print(f"\n  -- {model_name} --", flush=True)
 
         model_kwargs = {"n_channels": n_channels, "n_times": n_times, "num_classes": out_features}
 

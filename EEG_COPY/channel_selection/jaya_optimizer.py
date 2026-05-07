@@ -56,7 +56,7 @@ def run_ls_bjoa(
 
     # Auto-scale population and iterations to search space size (Issue 9)
     n_pop, n_iter = _get_pop_iter(n_channels, n_pop, n_iter)
-    print(f"    [LS-BJOA] n_channels={n_channels}, n_pop={n_pop}, n_iter={n_iter}")
+    print(f"    [LS-BJOA] n_channels={n_channels}, n_pop={n_pop}, n_iter={n_iter}", flush=True)
 
     # Initialize population with ~50% ones, then force candidate channels
     pop = (np.random.rand(n_pop, n_channels) > 0.5).astype(int)
@@ -133,7 +133,7 @@ def run_ls_bjoa(
         fitness_history.append(best_fitness)
         print(f"    [LS-BJOA] Iter {iteration+1:3d}/{n_iter} | "
               f"Best fitness: {best_fitness:.4f} | "
-              f"Channels selected: {int(np.sum(best_mask))}")
+              f"Channels selected: {int(np.sum(best_mask))}", flush=True)
 
     selected_indices = np.where(best_mask == 1)[0].tolist()
 

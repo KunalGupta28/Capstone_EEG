@@ -166,9 +166,9 @@ def print_comparison_row(
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    print("=" * 70)
-    print("  LS-BJOA Channel Selection + Deep Learning Pipeline")
-    print("=" * 70)
+    print("=" * 70, flush=True)
+    print("  LS-BJOA Channel Selection + Deep Learning Pipeline", flush=True)
+    print("=" * 70, flush=True)
 
     set_seed(CONFIG["seed"])
     device = get_device()
@@ -193,9 +193,9 @@ def main():
         ds_n_channels = None
 
         for subject_id in subjects:
-            print(f"\n{'~'*60}")
-            print(f"  {ds_name} | Subject: {subject_id}")
-            print(f"{'~'*60}")
+            print(f"\n{'~'*60}", flush=True)
+            print(f"  {ds_name} | Subject: {subject_id}", flush=True)
+            print(f"{'~'*60}", flush=True)
 
             # ---------------------------------------------------------------
             # 1. Load original data
@@ -216,7 +216,7 @@ def main():
             # ---------------------------------------------------------------
             # 2. Experiment A — Full channels
             # ---------------------------------------------------------------
-            print(f"\n  >>> Experiment A: FULL channels ({n_channels_full} ch)")
+            print(f"\n  >>> Experiment A: FULL channels ({n_channels_full} ch)", flush=True)
             full_start = time.time()
             try:
                 full_results = train_and_evaluate_subject(
@@ -236,7 +236,7 @@ def main():
             # ---------------------------------------------------------------
             # 3. Run LS-BJOA channel selection (on training data only)
             # ---------------------------------------------------------------
-            print(f"\n  >>> Running LS-BJOA channel selection ...")
+            print(f"\n  >>> Running LS-BJOA channel selection ...", flush=True)
             try:
                 cs_result = run_ls_bjoa(
                     X_train=X_train,

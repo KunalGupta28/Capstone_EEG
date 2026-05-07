@@ -20,7 +20,10 @@ import traceback
 
 import numpy as np
 
-warnings.filterwarnings("ignore")
+from sklearn.exceptions import ConvergenceWarning
+# Suppress only sklearn SVM convergence warnings — not all warnings (Issue 11)
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", message=".*invalid value encountered.*")
 
 # ---------------------------------------------------------------------------
 # Path setup — add BOTH project roots so we can import everything
@@ -60,16 +63,16 @@ CONFIG = {
 }
 
 DATASETS = {
-    "BCI-4-2a": {
-        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-4-2a-preprocessed"),
-        "is_binary": False,
-        "num_classes": 4,
-    },
-    "BCI_IV_1": {
-        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
-        "is_binary": True,
-        "num_classes": 2,
-    },
+    # "BCI-4-2a": {
+    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-4-2a-preprocessed"),
+    #     "is_binary": False,
+    #     "num_classes": 4,
+    # },
+    # "BCI_IV_1": {
+    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
+    #     "is_binary": True,
+    #     "num_classes": 2,
+    # },
     "BCI_III_IVa": {
         "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
         "is_binary": True,
@@ -241,8 +244,7 @@ def main():
                     n_channels=n_channels_full,
                     candidate_indices=get_candidate_indices(ds_name),
                     min_channels=get_min_channels(ds_name),
-                    n_pop=10,
-                    n_iter=20,
+                    is_binary=ds_cfg["is_binary"],
                     seed=CONFIG["seed"],
                 )
                 selected_indices = cs_result["selected_indices"]

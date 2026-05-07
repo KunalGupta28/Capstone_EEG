@@ -9,5 +9,5 @@ def binarize(x: np.ndarray) -> np.ndarray:
     """Converts continuous position to binary channel mask."""
     s_x = sigmoid(x)
     rand_vals = np.random.rand(*x.shape)
-    binary_mask = np.where(rand_vals < s_x, 0, 1)
+    binary_mask = np.where(rand_vals < s_x, 1, 0)
     return binary_mask

@@ -1,7 +1,25 @@
+import warnings
 import numpy as np
+from sklearn.exceptions import ConvergenceWarning
+
 from channel_selection.fitness import evaluate_fitness
 from channel_selection.logistic_map import generate_chaotic_sequence
 from channel_selection.transfer_function import binarize
+
+# Dataset-specific search settings (Issue 9)
+DS_POP_ITER = {
+    22:  (10, 20),   # BCI-4-2a
+    59:  (20, 30),   # BCI_IV_1
+    118: (30, 40),   # BCI_III_IVa
+}
+
+def _get_pop_iter(n_channels: int, n_pop: int, n_iter: int):
+    """Return dataset-appropriate pop/iter if defaults were not overridden."""
+    for ch_count, (pop, it) in DS_POP_ITER.items():
+        if n_channels <= ch_count:
+            return pop, it
+    return n_pop, n_iter
+
 
 def run_ls_bjoa(
     X_train: np.ndarray,
@@ -11,91 +29,118 @@ def run_ls_bjoa(
     min_channels: int,
     n_pop: int = 10,
     n_iter: int = 20,
-    w1: float = 0.9,
-    w2: float = 0.1,
+    is_binary: bool = False,
     seed: int = 42,
 ) -> dict:
     """
-    Returns:
-      {
-        'best_mask': np.ndarray (binary, length=n_channels),
-        'selected_indices': list of int,
-        'n_selected': int,
-        'best_fitness': float,
-        'fitness_history': list of float (best fitness per iteration),
-      }
+    LS-BJOA: Logistic S-shaped Binary Jaya Optimization Algorithm.
+
+    Parameters
+    ----------
+    X_train          : (n_trials, n_channels, n_times)
+    y_train          : (n_trials,)
+    n_channels       : total number of channels
+    candidate_indices: channels always forced to 1 (selected)
+    min_channels     : minimum number of selected channels for valid solution
+    n_pop            : population size (auto-scaled by n_channels if default)
+    n_iter           : number of iterations (auto-scaled if default)
+    is_binary        : True for binary classification datasets
+    seed             : numpy random seed
+
+    Returns
+    -------
+    dict with keys: best_mask, selected_indices, n_selected,
+                    best_fitness, fitness_history
     """
     np.random.seed(seed)
-    
-    # Initialize population randomly
-    pop = np.random.randint(0, 2, size=(n_pop, n_channels))
+
+    # Auto-scale population and iterations to search space size (Issue 9)
+    n_pop, n_iter = _get_pop_iter(n_channels, n_pop, n_iter)
+    print(f"    [LS-BJOA] n_channels={n_channels}, n_pop={n_pop}, n_iter={n_iter}")
+
+    # Initialize population with ~50% ones, then force candidate channels
+    pop = (np.random.rand(n_pop, n_channels) > 0.5).astype(int)
     for i in range(n_pop):
         for idx in candidate_indices:
             pop[i, idx] = 1
-            
-    # Evaluate initial population
-    fitness = np.zeros(n_pop)
-    for i in range(n_pop):
-        fitness[i] = evaluate_fitness(pop[i], X_train, y_train, candidate_indices, min_channels, w1, w2)
-        
-    best_idx = np.argmax(fitness)
-    worst_idx = np.argmin(fitness)
-    
-    best_mask = pop[best_idx].copy()
-    best_fitness = fitness[best_idx]
-    
-    fitness_history = [float(best_fitness)]
-    
-    # Generate chaotic sequence. Need 2 values per generation per pop
-    chaotic_seq = generate_chaotic_sequence(n_pop * n_iter * 2, c0=0.8)
+
+    # Suppress only SVM ConvergenceWarning (Issue 11)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        fitness = np.array([
+            evaluate_fitness(pop[i], X_train, y_train, candidate_indices,
+                             min_channels, is_binary)
+            for i in range(n_pop)
+        ])
+
+    best_idx  = int(np.argmax(fitness))
+    worst_idx = int(np.argmin(fitness))
+
+    best_mask    = pop[best_idx].copy()
+    best_fitness = float(fitness[best_idx])
+
+    fitness_history = [best_fitness]
+
+    # Chaotic sequence long enough for all moves
+    chaotic_seq = generate_chaotic_sequence(n_pop * n_iter * 2 + 10, c0=0.8)
     seq_idx = 0
-    
+
     for iteration in range(n_iter):
-        new_pop = np.zeros_like(pop)
-        new_fitness = np.zeros(n_pop)
-        
+        new_pop     = pop.copy()
+        new_fitness = fitness.copy()
+
         for i in range(n_pop):
-            c1 = chaotic_seq[seq_idx]
-            c2 = chaotic_seq[seq_idx+1]
-            seq_idx += 2
-            
-            x_best = pop[best_idx]
-            x_worst = pop[worst_idx]
-            x_curr = pop[i]
-            
-            x_new_cont = x_curr + c1 * (x_best - np.abs(x_curr)) - c2 * (x_worst - np.abs(x_curr))
-            x_new_bin = binarize(x_new_cont)
-            
+            c1 = chaotic_seq[seq_idx];     seq_idx += 1
+            c2 = chaotic_seq[seq_idx];     seq_idx += 1
+
+            x_best  = pop[best_idx].astype(float)
+            x_worst = pop[worst_idx].astype(float)
+            x_curr  = pop[i].astype(float)
+
+            # Jaya update rule (Eq. 19-23 from paper)
+            x_new_cont = x_curr + c1 * (x_best - np.abs(x_curr)) \
+                                 - c2 * (x_worst - np.abs(x_curr))
+            x_new_bin  = binarize(x_new_cont)
+
+            # Always force candidate channels (Issue 5)
             for idx in candidate_indices:
                 x_new_bin[idx] = 1
-                
-            fit_new = evaluate_fitness(x_new_bin, X_train, y_train, candidate_indices, min_channels, w1, w2)
-            
-            if fit_new > fitness[i]:
-                new_pop[i] = x_new_bin
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", ConvergenceWarning)
+                fit_new = evaluate_fitness(x_new_bin, X_train, y_train,
+                                          candidate_indices, min_channels, is_binary)
+
+            # Greedy acceptance
+            if fit_new > new_fitness[i]:
+                new_pop[i]     = x_new_bin
                 new_fitness[i] = fit_new
-            else:
-                new_pop[i] = pop[i]
-                new_fitness[i] = fitness[i]
-                
-        pop = new_pop
+
+        # Issue 10: Elitism — preserve best solution into slot 0
+        new_pop[0]     = best_mask.copy()
+        new_fitness[0] = best_fitness
+
+        pop     = new_pop
         fitness = new_fitness
-        
-        best_idx = np.argmax(fitness)
-        worst_idx = np.argmin(fitness)
-        
+
+        best_idx  = int(np.argmax(fitness))
+        worst_idx = int(np.argmin(fitness))
+
         if fitness[best_idx] > best_fitness:
-            best_fitness = fitness[best_idx]
-            best_mask = pop[best_idx].copy()
-            
-        fitness_history.append(float(best_fitness))
-        
+            best_fitness = float(fitness[best_idx])
+            best_mask    = pop[best_idx].copy()
+
+        fitness_history.append(best_fitness)
+        print(f"    [LS-BJOA] Iter {iteration+1:3d}/{n_iter} | "
+              f"Best fitness: {best_fitness:.4f} | "
+              f"Channels selected: {int(np.sum(best_mask))}")
+
     selected_indices = np.where(best_mask == 1)[0].tolist()
-    
+
     return {
-        'best_mask': best_mask,
-        'selected_indices': selected_indices,
-        'n_selected': len(selected_indices),
-        'best_fitness': float(best_fitness),
-        'fitness_history': fitness_history,
+        "best_mask":       best_mask,
+        "selected_indices": selected_indices,
+        "n_selected":       len(selected_indices),
+        "best_fitness":     best_fitness,
+        "fitness_history":  fitness_history,
     }

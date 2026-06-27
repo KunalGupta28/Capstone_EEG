@@ -72,12 +72,12 @@ from channel_selection.jaya_optimizer import run_ls_bjoa, _get_pop_iter
 p22, i22 = _get_pop_iter(22, 10, 20)
 p59, i59 = _get_pop_iter(59, 10, 20)
 p118, i118 = _get_pop_iter(118, 10, 20)
-print(f"  22 ch  -> pop={p22}, iter={i22} (expect 10, 20)")
-print(f"  59 ch  -> pop={p59}, iter={i59} (expect 20, 30)")
-print(f"  118 ch -> pop={p118}, iter={i118} (expect 30, 40)")
-assert (p22, i22) == (10, 20)
-assert (p59, i59) == (20, 30)
-assert (p118, i118) == (30, 40)
+print(f"  22 ch  -> pop={p22}, iter={i22} (expect 10, 15)")
+print(f"  59 ch  -> pop={p59}, iter={i59} (expect 12, 20)")
+print(f"  118 ch -> pop={p118}, iter={i118} (expect 15, 25)")
+assert (p22, i22) == (10, 15)
+assert (p59, i59) == (12, 20)
+assert (p118, i118) == (15, 25)
 
 # Run optimizer on tiny data
 result = run_ls_bjoa(X_bin, y_bin, n_channels=10,

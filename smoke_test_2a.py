@@ -25,7 +25,7 @@ smoke_registry = {
 
 results = train_and_evaluate_subject(
     subject_id     = 'A01T',
-    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data',
+    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data\BCI-4-2a-preprocessed',
     results_dir    = r'c:\Users\Dell\Desktop\EEG\results',
     config         = CONFIG,
     model_registry = smoke_registry,

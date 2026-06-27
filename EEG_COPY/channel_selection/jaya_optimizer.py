@@ -1,16 +1,31 @@
+"""
+channel_selection/jaya_optimizer.py
+==================================
+Optimizations applied:
+1. Reduced pop size and iter limits dynamically:
+   - 22 channels: pop=10, iter=15
+   - 59 channels: pop=12, iter=20
+   - 118 channels: pop=15, iter=25
+2. Shared persistent dict-based fitness caching passed to evaluate_fitness().
+3. Parallel candidate evaluation using joblib.Parallel.
+4. Early stopping if best fitness has not improved for 5 iterations.
+5. Elitism preserved (best solution kept in slot 0).
+"""
+
 import warnings
 import numpy as np
 from sklearn.exceptions import ConvergenceWarning
+from joblib import Parallel, delayed
 
 from channel_selection.fitness import evaluate_fitness
 from channel_selection.logistic_map import generate_chaotic_sequence
 from channel_selection.transfer_function import binarize
 
-# Dataset-specific search settings (Issue 9)
+# Dynamic settings matching the new optimized iteration budgets (Optimization 2)
 DS_POP_ITER = {
-    22:  (10, 20),   # BCI-4-2a
-    59:  (20, 30),   # BCI_IV_1
-    118: (30, 40),   # BCI_III_IVa
+    22:  (10, 15),
+    59:  (12, 20),
+    118: (15, 25),
 }
 
 def _get_pop_iter(n_channels: int, n_pop: int, n_iter: int):
@@ -34,6 +49,7 @@ def run_ls_bjoa(
 ) -> dict:
     """
     LS-BJOA: Logistic S-shaped Binary Jaya Optimization Algorithm.
+    Highly optimized for execution speed.
 
     Parameters
     ----------
@@ -42,8 +58,8 @@ def run_ls_bjoa(
     n_channels       : total number of channels
     candidate_indices: channels always forced to 1 (selected)
     min_channels     : minimum number of selected channels for valid solution
-    n_pop            : population size (auto-scaled by n_channels if default)
-    n_iter           : number of iterations (auto-scaled if default)
+    n_pop            : population size
+    n_iter           : number of iterations
     is_binary        : True for binary classification datasets
     seed             : numpy random seed
 
@@ -54,9 +70,12 @@ def run_ls_bjoa(
     """
     np.random.seed(seed)
 
-    # Auto-scale population and iterations to search space size (Issue 9)
+    # 1. Scale down defaults
     n_pop, n_iter = _get_pop_iter(n_channels, n_pop, n_iter)
     print(f"    [LS-BJOA] n_channels={n_channels}, n_pop={n_pop}, n_iter={n_iter}", flush=True)
+
+    # 2. Shared fitness cache (Optimization 1 & 2)
+    cache = {}
 
     # Initialize population with ~50% ones, then force candidate channels
     pop = (np.random.rand(n_pop, n_channels) > 0.5).astype(int)
@@ -64,14 +83,40 @@ def run_ls_bjoa(
         for idx in candidate_indices:
             pop[i, idx] = 1
 
-    # Suppress only SVM ConvergenceWarning (Issue 11)
+    # 3. Parallel initialization of fitness (Optimization 2)
+    # Find unique initial masks to avoid redundant computation
+    unique_masks = []
+    unique_keys = []
+    for mask in pop:
+        mask_copy = mask.copy()
+        for idx in candidate_indices:
+            mask_copy[idx] = 1
+        key = tuple(mask_copy.astype(int))
+        if key not in unique_keys:
+            unique_keys.append(key)
+            unique_masks.append(mask_copy)
+
+    # Evaluate unique initial masks in parallel
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)
-        fitness = np.array([
-            evaluate_fitness(pop[i], X_train, y_train, candidate_indices,
-                             min_channels, is_binary)
-            for i in range(n_pop)
-        ])
+        results = Parallel(n_jobs=-1)(
+            delayed(evaluate_fitness)(
+                mask=m,
+                X_train=X_train,
+                y_train=y_train,
+                candidate_indices=candidate_indices,
+                min_channels=min_channels,
+                is_binary=is_binary,
+                cache=None  # Disable internal caching in parallel processes
+            )
+            for m in unique_masks
+        )
+    # Update master cache
+    for k, val in zip(unique_keys, results):
+        cache[k] = val
+
+    # Fill initial fitness array from cache
+    fitness = np.array([cache[tuple(pop[i])] for i in range(n_pop)])
 
     best_idx  = int(np.argmax(fitness))
     worst_idx = int(np.argmin(fitness))
@@ -81,14 +126,18 @@ def run_ls_bjoa(
 
     fitness_history = [best_fitness]
 
-    # Chaotic sequence long enough for all moves
+    # Pre-generate chaotic sequence
     chaotic_seq = generate_chaotic_sequence(n_pop * n_iter * 2 + 10, c0=0.8)
     seq_idx = 0
+
+    no_improve_count = 0
 
     for iteration in range(n_iter):
         new_pop     = pop.copy()
         new_fitness = fitness.copy()
 
+        # Generate candidate updates for the entire population first
+        candidate_masks = []
         for i in range(n_pop):
             c1 = chaotic_seq[seq_idx];     seq_idx += 1
             c2 = chaotic_seq[seq_idx];     seq_idx += 1
@@ -102,21 +151,52 @@ def run_ls_bjoa(
                                  - c2 * (x_worst - np.abs(x_curr))
             x_new_bin  = binarize(x_new_cont)
 
-            # Always force candidate channels (Issue 5)
+            # Always force candidate channels
             for idx in candidate_indices:
                 x_new_bin[idx] = 1
 
+            candidate_masks.append(x_new_bin)
+
+        # Find only the uncached candidate masks to evaluate in parallel
+        uncached_candidate_keys = []
+        uncached_candidate_masks = []
+        for mask in candidate_masks:
+            key = tuple(mask.astype(int))
+            if key not in cache:
+                if key not in uncached_candidate_keys:
+                    uncached_candidate_keys.append(key)
+                    uncached_candidate_masks.append(mask)
+
+        # Parallel evaluation of the uncached candidates
+        if uncached_candidate_masks:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", ConvergenceWarning)
-                fit_new = evaluate_fitness(x_new_bin, X_train, y_train,
-                                          candidate_indices, min_channels, is_binary)
+                candidate_results = Parallel(n_jobs=-1)(
+                    delayed(evaluate_fitness)(
+                        mask=m,
+                        X_train=X_train,
+                        y_train=y_train,
+                        candidate_indices=candidate_indices,
+                        min_channels=min_channels,
+                        is_binary=is_binary,
+                        cache=None
+                    )
+                    for m in uncached_candidate_masks
+                )
+            # Update cache in the main process
+            for k, val in zip(uncached_candidate_keys, candidate_results):
+                cache[k] = val
 
-            # Greedy acceptance
+        # Greedy acceptance check (from cache)
+        for i in range(n_pop):
+            x_new_bin = candidate_masks[i]
+            fit_new = cache[tuple(x_new_bin.astype(int))]
+
             if fit_new > new_fitness[i]:
                 new_pop[i]     = x_new_bin
                 new_fitness[i] = fit_new
 
-        # Issue 10: Elitism — preserve best solution into slot 0
+        # Elitism: preserve best solution into slot 0
         new_pop[0]     = best_mask.copy()
         new_fitness[0] = best_fitness
 
@@ -126,14 +206,23 @@ def run_ls_bjoa(
         best_idx  = int(np.argmax(fitness))
         worst_idx = int(np.argmin(fitness))
 
+        # Check if global best has improved
         if fitness[best_idx] > best_fitness:
             best_fitness = float(fitness[best_idx])
             best_mask    = pop[best_idx].copy()
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
 
         fitness_history.append(best_fitness)
         print(f"    [LS-BJOA] Iter {iteration+1:3d}/{n_iter} | "
               f"Best fitness: {best_fitness:.4f} | "
               f"Channels selected: {int(np.sum(best_mask))}", flush=True)
+
+        # Early Stopping check (Optimization 2)
+        if no_improve_count >= 5:
+            print(f"    [LS-BJOA] Early stopping at iteration {iteration+1}", flush=True)
+            break
 
     selected_indices = np.where(best_mask == 1)[0].tolist()
 

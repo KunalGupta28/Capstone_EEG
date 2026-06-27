@@ -29,7 +29,7 @@ subj_binary = 'BCICIV_calib_ds1a'
 print(f"\n---> Starting BCI_IV_1 ({subj_binary})")
 results_1 = train_and_evaluate_subject(
     subject_id     = subj_binary,
-    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data',
+    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data\BCI_IV_1_mat-preprocessed',
     results_dir    = r'c:\Users\Dell\Desktop\EEG\results',
     config         = CONFIG,
     model_registry = MODEL_REGISTRY,
@@ -42,7 +42,7 @@ subj_multi = 'A01T'
 print(f"\n---> Starting BCI-4-2a ({subj_multi})")
 results_2 = train_and_evaluate_subject(
     subject_id     = subj_multi,
-    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data',
+    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data\BCI-4-2a-preprocessed',
     results_dir    = r'c:\Users\Dell\Desktop\EEG\results',
     config         = CONFIG,
     model_registry = MODEL_REGISTRY,

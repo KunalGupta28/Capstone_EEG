@@ -19,7 +19,7 @@ device = get_device()
 
 results = train_and_evaluate_subject(
     subject_id     = 'BCICIV_calib_ds1a',
-    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data',
+    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data\BCI_IV_1_mat-preprocessed',
     results_dir    = r'c:\Users\Dell\Desktop\EEG\results',
     config         = CONFIG,
     model_registry = MODEL_REGISTRY,

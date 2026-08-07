@@ -1,7 +1,8 @@
 import sys, os, warnings
 warnings.filterwarnings('ignore')
-sys.path.insert(0, r'c:\Users\Dell\Desktop\EEG')
-os.chdir(r'c:\Users\Dell\Desktop\EEG')
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, ROOT)
+os.chdir(ROOT)
 
 from models.models  import MODEL_REGISTRY
 from pipeline.utils import set_seed, get_device
@@ -19,8 +20,8 @@ device = get_device()
 
 results = train_and_evaluate_subject(
     subject_id     = 'BCICIV_calib_ds1a',
-    processed_dir  = r'c:\Users\Dell\Desktop\EEG\processed_data\BCI_IV_1_mat-preprocessed',
-    results_dir    = r'c:\Users\Dell\Desktop\EEG\results',
+    processed_dir  = os.path.join(ROOT, 'processed_data', 'BCI_IV_1_mat-preprocessed'),
+    results_dir    = os.path.join(ROOT, 'results'),
     config         = CONFIG,
     model_registry = MODEL_REGISTRY,
     device         = device,

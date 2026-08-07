@@ -3,8 +3,8 @@ Smoke test for all fixed channel selection modules.
 Verifies Issues 1-11 are resolved.
 """
 import sys, os, warnings
-sys.path.insert(0, r'C:\Users\Dell\Desktop\EEG\EEG_COPY')
-sys.path.insert(0, r'C:\Users\Dell\Desktop\EEG')
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, ROOT)
 
 from sklearn.exceptions import ConvergenceWarning
 warnings.filterwarnings("ignore", category=ConvergenceWarning)

@@ -26,14 +26,11 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning)
 warnings.filterwarnings("ignore", message=".*invalid value encountered.*")
 
 # ---------------------------------------------------------------------------
-# Path setup — add BOTH project roots so we can import everything
+# Path setup
 # ---------------------------------------------------------------------------
-COPY_ROOT = os.path.dirname(os.path.abspath(__file__))          # EEG_COPY/
-PROJECT_ROOT = os.path.dirname(COPY_ROOT)                       # EEG/
-
-for p in [COPY_ROOT, PROJECT_ROOT]:
-    if p not in sys.path:
-        sys.path.insert(0, p)
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 # -- Imports from the existing pipeline (EEG/) -----------------------------
 from models.models    import MODEL_REGISTRY
@@ -293,7 +290,7 @@ def main():
             X_test_cs  = apply_mask(X_test,  selected_indices)
 
             # Save to temp dir so load_subject_data can find it
-            temp_dir = os.path.join(COPY_ROOT, "_temp_cs_data")
+            temp_dir = os.path.join(PROJECT_ROOT, "_temp_cs_data")
             save_cs_data_to_temp(X_train_cs, X_test_cs, y_train, y_test, subject_id, temp_dir)
 
             print(f"\n  >>> Experiment B: CS channels ({n_selected} ch)")

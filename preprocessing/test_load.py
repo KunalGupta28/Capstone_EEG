@@ -1,7 +1,8 @@
 import scipy.io as sio
 import os
 
-file_path = r'C:\Users\Dell\Desktop\EEG\BCI-4-2a\A01T.mat'
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+file_path = os.path.join(BASE_DIR, 'BCI-4-2a', 'A01T.mat')
 try:
     mat = sio.loadmat(file_path)
     print("Keys in mat:", mat.keys())

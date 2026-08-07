@@ -3,7 +3,6 @@ import argparse
 import numpy as np
 import mne
 from mne.preprocessing import ICA
-from sklearn.preprocessing import StandardScaler
 
 from .config import (
     DATA_DIR, PROCESSED_DIR, FREQ_BANDS, EPOCH_TMIN, EPOCH_TMAX, 
@@ -94,16 +93,18 @@ def preprocess_subject(subject_id):
     
     print(f"Epochs shape: {X.shape}")
     
-    # Z-score normalization per channel (over time and trials)
-    # We will reshape X to (n_trials * n_times, n_channels), scale, then reshape back
+    # Z-score normalization per trial and per channel (prevents test set leakage)
     n_trials, n_channels, n_times = X.shape
-    X_reshaped = np.transpose(X, (0, 2, 1)).reshape(-1, n_channels)
+    X_norm = np.zeros_like(X)
     
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_reshaped)
-    
-    # Reshape back to (n_trials, n_channels, n_times)
-    X_norm = np.transpose(X_scaled.reshape(n_trials, n_times, n_channels), (0, 2, 1))
+    for i in range(n_trials):
+        for c in range(n_channels):
+            mean_val = np.mean(X[i, c, :])
+            std_val = np.std(X[i, c, :])
+            if std_val > 0:
+                X_norm[i, c, :] = (X[i, c, :] - mean_val) / std_val
+            else:
+                X_norm[i, c, :] = X[i, c, :] - mean_val
     
     # 6. Save data
     out_x_path = os.path.join(PROCESSED_DIR, f"{subject_id}_X.npy")

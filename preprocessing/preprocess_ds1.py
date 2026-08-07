@@ -3,12 +3,11 @@ import glob
 import numpy as np
 import scipy.io as sio
 import mne
-from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, 'BCICIV_1_mat')
-PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data')
+DATA_DIR = os.path.join(BASE_DIR, 'BCI_IV_1_mat')
+PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI_IV_1_mat-preprocessed')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 def preprocess_ds1_subject(file_path):
@@ -121,5 +120,7 @@ def preprocess_ds1_subject(file_path):
 
 if __name__ == '__main__':
     mat_files = glob.glob(os.path.join(DATA_DIR, 'BCICIV_calib_ds*.mat'))
+    if not mat_files:
+        raise FileNotFoundError(f"No .mat files found in DATA_DIR: {DATA_DIR}")
     for file_path in mat_files:
         preprocess_ds1_subject(file_path)

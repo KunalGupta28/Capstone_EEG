@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'BCI -III-IVa')
-PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data')
+PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI-III-IVa-preprocessed')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 def preprocess_ds3_subject(file_path):
@@ -130,7 +130,7 @@ if __name__ == '__main__':
     mat_files = glob.glob(search_pattern)
     
     if not mat_files:
-        print("No files found!")
+        raise FileNotFoundError(f"No files matched the search pattern: {search_pattern}")
     else:
         for file_path in mat_files:
             preprocess_ds3_subject(file_path)

@@ -4,7 +4,7 @@ import os
 # You can override these via environment variables or modify directly
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'BCI-4-2a')
-PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data')
+PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI-4-2a-preprocessed')
 
 # Create processed directory if it doesn't exist
 os.makedirs(PROCESSED_DIR, exist_ok=True)

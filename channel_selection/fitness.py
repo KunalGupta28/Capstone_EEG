@@ -1,19 +1,64 @@
 """
 channel_selection/fitness.py
 ============================
-Optimizations applied:
-1. Log-variance feature extraction: reduces dimension from (channels * times) to (channels).
-2. LinearSVC classifier instead of RBF kernel SVC (orders of magnitude faster).
-3. 80/20 train/validation stratified single split instead of 3-fold CV.
-4. Dict-based caching of computed mask fitnesses to skip duplicate solutions.
-5. Replaced AUC with accuracy in binary fitness formula for faster estimation.
+Evaluates the quality of a candidate channel mask using a fast proxy
+classifier (LinearSVC) trained on **bandpower** features.
+
+Previous version used log-variance features, which were identically zero
+after per-trial Z-score normalization (variance ≡ 1.0 → log(1) = 0).
+Bandpower features (mu 8-13 Hz, beta 13-30 Hz power spectral density)
+survive Z-scoring because they capture frequency-domain structure that
+time-domain standardisation does not destroy.
 """
 
 import numpy as np
+from scipy.signal import welch
 from sklearn.svm import LinearSVC
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import f1_score, accuracy_score
+
+
+def _extract_bandpower_features(
+    X: np.ndarray,
+    sampling_rate: float = 100.0,
+) -> np.ndarray:
+    """
+    Extract mu-band (8-13 Hz) and beta-band (13-30 Hz) average power
+    for each trial and selected channel.
+
+    Parameters
+    ----------
+    X : (n_trials, n_channels, n_times)
+    sampling_rate : sampling frequency in Hz
+
+    Returns
+    -------
+    features : (n_trials, n_channels * 2)
+        Concatenation of [mu_power, beta_power] per channel.
+    """
+    n_trials, n_channels, n_times = X.shape
+
+    # Welch PSD — use a segment length that fits the data
+    nperseg = min(128, n_times)
+    freqs, psd = welch(X, fs=sampling_rate, nperseg=nperseg, axis=2)
+    # psd shape: (n_trials, n_channels, n_freqs)
+
+    # Frequency band masks
+    mu_mask = (freqs >= 8) & (freqs <= 13)
+    beta_mask = (freqs >= 13) & (freqs <= 30)
+
+    # Average power in each band
+    mu_power = np.mean(psd[:, :, mu_mask], axis=2)      # (n_trials, n_channels)
+    beta_power = np.mean(psd[:, :, beta_mask], axis=2)   # (n_trials, n_channels)
+
+    # Log-transform for better classifier separability
+    mu_power = np.log(np.clip(mu_power, 1e-10, None))
+    beta_power = np.log(np.clip(beta_power, 1e-10, None))
+
+    features = np.concatenate([mu_power, beta_power], axis=1)
+    return features
+
 
 def evaluate_fitness(
     mask: np.ndarray,
@@ -23,10 +68,12 @@ def evaluate_fitness(
     min_channels: int,
     is_binary: bool = False,
     cache: dict = None,
+    sampling_rate: float = 100.0,
 ) -> float:
     """
-    Computes fitness for a given channel mask using LinearSVC on log-variance features.
-    
+    Computes fitness for a given channel mask using LinearSVC on bandpower
+    features (mu + beta band log-power).
+
     Parameters
     ----------
     mask              : binary mask of shape (n_channels,)
@@ -36,6 +83,7 @@ def evaluate_fitness(
     min_channels      : minimum number of channels required
     is_binary         : bool, whether classification is binary
     cache             : dict, shared fitness cache
+    sampling_rate     : sampling frequency in Hz (100 for DS1/DS3, 250 for 2a)
     """
     # 1. Force candidate (motor cortex) channels
     mask_copy = mask.copy()
@@ -57,13 +105,12 @@ def evaluate_fitness(
     total_channels = len(mask_copy)
     channel_ratio = selected_channels / total_channels
 
-    # 4. Feature Extraction: Log-Variance
+    # 4. Feature Extraction: Bandpower (mu + beta)
     X_selected = X_train[:, mask_copy == 1, :]
-    variances = np.var(X_selected, axis=2)
-    X_flat = np.log(np.clip(variances, 1e-10, None))  # Shape: (n_trials, n_selected_channels)
+    X_flat = _extract_bandpower_features(X_selected, sampling_rate=sampling_rate)
 
-    # 5. Stratified 80/20 train/val split (using 5-fold StratifiedKFold first split)
-    min_class_count = np.min(np.bincount(y_train))
+    # 5. Stratified 80/20 train/val split
+    min_class_count = np.min(np.bincount(y_train.astype(int)))
     n_splits = min(5, min_class_count)
     if n_splits < 2:
         if cache is not None:
@@ -85,7 +132,7 @@ def evaluate_fitness(
 
     # 7. Fast Linear SVM Proxy Classifier
     clf = LinearSVC(C=0.1, max_iter=500, dual=False, random_state=42)
-    
+
     try:
         clf.fit(X_train_scaled, y_train[train_idx])
         y_pred = clf.predict(X_val_scaled)
@@ -100,8 +147,7 @@ def evaluate_fitness(
     macro_f1 = f1_score(y_val_true, y_pred, average='macro', zero_division=0)
 
     # 9. Compute multi-objective fitness
-    # Formula uses 0.7 * F1 + 0.2 * Acc + 0.1 * (1 - channel_ratio)
-    # This aligns accuracy-dominant preference (w1=0.9) and channel-reduction (w2=0.1)
+    # Formula: 0.7 * F1 + 0.2 * Acc + 0.1 * (1 - channel_ratio)
     fitness = 0.7 * macro_f1 + 0.2 * acc + 0.1 * (1.0 - channel_ratio)
 
     fitness = float(fitness)

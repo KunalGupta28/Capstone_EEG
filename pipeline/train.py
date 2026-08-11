@@ -2,6 +2,12 @@
 pipeline/train.py
 =================
 Training loop, cross-validation, and subject-level orchestration.
+
+Changes from baseline:
+  - Class-weighted loss to prevent majority-class collapse (F1 = 0)
+  - Data augmentation (noise injection + temporal shifts) on training folds
+  - Sliding-window expansion on training folds for data-scarce subjects
+  - Adaptive model sizing based on available training data
 """
 
 import os
@@ -12,8 +18,14 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
 
-from pipeline.utils import EEGDataset, load_subject_data, set_seed
-from pipeline.eval  import (
+from pipeline.utils import (
+    EEGDataset,
+    load_subject_data,
+    set_seed,
+    augment_eeg,
+    sliding_window_expand,
+)
+from pipeline.eval import (
     compute_metrics,
     plot_loss_curves,
     save_confusion_matrix,
@@ -90,6 +102,32 @@ def predict_logits(model: nn.Module, loader: DataLoader, device: torch.device) -
 
 
 # ---------------------------------------------------------------------------
+# Class-weighted loss helpers
+# ---------------------------------------------------------------------------
+def _make_criterion(y_train_fold: np.ndarray, is_binary: bool, device: torch.device):
+    """
+    Build a loss criterion with class weights computed from the training
+    fold labels.  Prevents majority-class collapse for imbalanced or
+    data-starved subjects.
+    """
+    if is_binary:
+        y_int = y_train_fold.astype(int)
+        n_pos = int((y_int == 1).sum())
+        n_neg = int((y_int == 0).sum())
+        pos_weight = torch.tensor(
+            [n_neg / max(n_pos, 1)], dtype=torch.float32
+        ).to(device)
+        return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+    else:
+        class_counts = np.bincount(y_train_fold.astype(int))
+        weights = 1.0 / (class_counts.astype(float) + 1e-6)
+        weights = weights / weights.sum() * len(class_counts)
+        return nn.CrossEntropyLoss(
+            weight=torch.tensor(weights, dtype=torch.float32).to(device)
+        )
+
+
+# ---------------------------------------------------------------------------
 # 5-Fold Cross-Validation
 # ---------------------------------------------------------------------------
 def run_cross_validation(
@@ -102,7 +140,7 @@ def run_cross_validation(
     is_binary: bool = False,
 ):
     """
-    5-fold Stratified Cross-Validation.
+    5-fold Stratified Cross-Validation with data augmentation.
 
     Returns
     -------
@@ -133,6 +171,30 @@ def run_cross_validation(
         X_tr, y_tr = X[tr_idx], y[tr_idx]
         X_val, y_val = X[val_idx], y[val_idx]
 
+        # ------------------------------------------------------------------
+        # Data augmentation (training fold only)
+        # ------------------------------------------------------------------
+        n_train_raw = X_tr.shape[0]
+
+        # Sliding-window expansion (creates ~3x samples for 301-sample epochs)
+        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=50)
+
+        # Noise + shift augmentation (creates ~5x samples)
+        X_tr, y_tr = augment_eeg(
+            X_tr, y_tr,
+            noise_std=0.1,
+            n_noise_copies=2,
+            max_shift=15,
+            n_shift_copies=2,
+        )
+
+        # Also window-expand validation for consistent input size,
+        # but WITHOUT augmentation (no noise/shift)
+        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=50)
+
+        print(f"    [CV] Fold {fold}: {n_train_raw} raw -> "
+              f"{X_tr.shape[0]} augmented train, {X_val.shape[0]} val windows", flush=True)
+
         train_ds  = EEGDataset(X_tr, y_tr)
         val_ds    = EEGDataset(X_val, y_val)
         train_dl  = DataLoader(train_ds, batch_size=batch_sz, shuffle=True,
@@ -140,15 +202,13 @@ def run_cross_validation(
         val_dl    = DataLoader(val_ds,   batch_size=batch_sz, shuffle=False,
                                num_workers=0, pin_memory=device.type == "cuda")
 
-        # Build model for this fold
-        model = model_cls(**model_kwargs, dropout=dropout).to(device)
+        # Build model for this fold — use augmented n_times
+        fold_model_kwargs = model_kwargs.copy()
+        fold_model_kwargs["n_times"] = X_tr.shape[2]
+        model = model_cls(**fold_model_kwargs, dropout=dropout).to(device)
 
-        if is_binary:
-            # Binary loss
-            criterion = nn.BCEWithLogitsLoss()
-        else:
-            # Multi-class loss
-            criterion = nn.CrossEntropyLoss()
+        # Class-weighted loss
+        criterion = _make_criterion(y_tr, is_binary, device)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -224,10 +284,11 @@ def train_and_evaluate_subject(
     X_train, X_test, y_train, y_test, num_classes = load_subject_data(processed_dir, subject_id)
     n_channels = X_train.shape[1]
     n_times    = X_train.shape[2]
+    n_train    = X_train.shape[0]
 
     is_binary = (num_classes == 2)
     out_features = 1 if is_binary else num_classes
-    
+
     # -- Output directories ------------------------------------------------
     plots_dir  = os.path.join(results_dir, "plots",       subject_id)
     weights_dir = os.path.join(results_dir, "weights")
@@ -240,7 +301,20 @@ def train_and_evaluate_subject(
     for model_name, model_cls in model_registry.items():
         print(f"\n  -- {model_name} --", flush=True)
 
-        model_kwargs = {"n_channels": n_channels, "n_times": n_times, "num_classes": out_features}
+        # Adaptive model sizing based on training set size
+        if n_train < 50:
+            hidden_size = 32
+        elif n_train < 100:
+            hidden_size = 64
+        else:
+            hidden_size = 128
+
+        model_kwargs = {
+            "n_channels": n_channels,
+            "n_times": n_times,
+            "num_classes": out_features,
+            "hidden_size": hidden_size,
+        }
 
         # 5-Fold CV on training data
         fold_metrics, best_state, fold_histories = run_cross_validation(
@@ -269,11 +343,19 @@ def train_and_evaluate_subject(
             torch.save(best_state, weight_path)
 
         # -- Evaluate on held-out test set ---------------------------------
-        model = model_cls(**model_kwargs, dropout=config["dropout"]).to(device)
+        # Apply sliding window to test set for consistent input size
+        X_test_win, y_test_win = sliding_window_expand(
+            X_test, y_test, window_size=200, stride=50
+        )
+
+        # Build model with the windowed n_times
+        test_model_kwargs = model_kwargs.copy()
+        test_model_kwargs["n_times"] = X_test_win.shape[2]
+        model = model_cls(**test_model_kwargs, dropout=config["dropout"]).to(device)
         if best_state is not None:
             model.load_state_dict(best_state)
 
-        test_ds = EEGDataset(X_test, y_test)
+        test_ds = EEGDataset(X_test_win, y_test_win)
         test_dl = DataLoader(test_ds, batch_size=config["batch_size"],
                              shuffle=False, num_workers=0)
 
@@ -284,7 +366,7 @@ def train_and_evaluate_subject(
         else:
             test_pred   = np.argmax(test_logits, axis=1)
 
-        test_metrics = compute_metrics(y_test, test_logits, is_binary=is_binary)
+        test_metrics = compute_metrics(y_test_win, test_logits, is_binary=is_binary)
         subject_results[model_name] = test_metrics
 
         # -- Save predictions ----------------------------------------------
@@ -294,7 +376,7 @@ def train_and_evaluate_subject(
 
         # -- Confusion matrix ---------------------------------------------
         save_confusion_matrix(
-            y_test, test_pred,
+            y_test_win, test_pred,
             save_path=os.path.join(plots_dir, f"{model_name}_cm.png"),
             title=f"{subject_id} | {model_name} | Confusion Matrix",
             num_classes=num_classes

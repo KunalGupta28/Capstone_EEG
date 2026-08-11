@@ -46,6 +46,7 @@ def run_ls_bjoa(
     n_iter: int = 20,
     is_binary: bool = False,
     seed: int = 42,
+    sampling_rate: float = 100.0,
 ) -> dict:
     """
     LS-BJOA: Logistic S-shaped Binary Jaya Optimization Algorithm.
@@ -62,6 +63,7 @@ def run_ls_bjoa(
     n_iter           : number of iterations
     is_binary        : True for binary classification datasets
     seed             : numpy random seed
+    sampling_rate    : sampling frequency in Hz (for bandpower features)
 
     Returns
     -------
@@ -99,7 +101,7 @@ def run_ls_bjoa(
     # Evaluate unique initial masks in parallel
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)
-        results = Parallel(n_jobs=-1)(
+        results = Parallel(n_jobs=1)(
             delayed(evaluate_fitness)(
                 mask=m,
                 X_train=X_train,
@@ -107,7 +109,8 @@ def run_ls_bjoa(
                 candidate_indices=candidate_indices,
                 min_channels=min_channels,
                 is_binary=is_binary,
-                cache=None  # Disable internal caching in parallel processes
+                cache=None,  # Disable internal caching in parallel processes
+                sampling_rate=sampling_rate,
             )
             for m in unique_masks
         )
@@ -171,7 +174,7 @@ def run_ls_bjoa(
         if uncached_candidate_masks:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", ConvergenceWarning)
-                candidate_results = Parallel(n_jobs=-1)(
+                candidate_results = Parallel(n_jobs=1)(
                     delayed(evaluate_fitness)(
                         mask=m,
                         X_train=X_train,
@@ -179,7 +182,8 @@ def run_ls_bjoa(
                         candidate_indices=candidate_indices,
                         min_channels=min_channels,
                         is_binary=is_binary,
-                        cache=None
+                        cache=None,
+                        sampling_rate=sampling_rate,
                     )
                     for m in uncached_candidate_masks
                 )

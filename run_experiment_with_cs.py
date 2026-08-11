@@ -60,20 +60,23 @@ CONFIG = {
 }
 
 DATASETS = {
-    # "BCI-4-2a": {
-    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-4-2a-preprocessed"),
-    #     "is_binary": False,
-    #     "num_classes": 4,
-    # },
-    # "BCI_IV_1": {
-    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
-    #     "is_binary": True,
-    #     "num_classes": 2,
-    # },
+    "BCI-4-2a": {
+        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-4-2a-preprocessed"),
+        "is_binary": False,
+        "num_classes": 4,
+        "sampling_rate": 250.0,
+    },
+    "BCI_IV_1": {
+        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
+        "is_binary": True,
+        "num_classes": 2,
+        "sampling_rate": 100.0,
+    },
     "BCI_III_IVa": {
         "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
         "is_binary": True,
         "num_classes": 2,
+        "sampling_rate": 100.0,
     },
 }
 
@@ -243,6 +246,7 @@ def main():
                     min_channels=get_min_channels(ds_name),
                     is_binary=ds_cfg["is_binary"],
                     seed=CONFIG["seed"],
+                    sampling_rate=ds_cfg.get("sampling_rate", 100.0),
                 )
                 selected_indices = cs_result["selected_indices"]
                 n_selected = cs_result["n_selected"]
@@ -331,10 +335,8 @@ def main():
                         "model": model_name, "experiment": "Full",
                         "channels": n_channels_full,
                         "accuracy":  round(full_results[model_name].get("accuracy", 0), 6),
-                        "precision": round(full_results[model_name].get("precision", 0), 6)
-                                     if "precision" in full_results[model_name] else "N/A",
-                        "recall":    round(full_results[model_name].get("recall", 0), 6)
-                                     if "recall" in full_results[model_name] else "N/A",
+                        "precision": round(full_results[model_name].get("precision", 0), 6),
+                        "recall":    round(full_results[model_name].get("recall", 0), 6),
                         "f1":        round(full_results[model_name].get("f1", 0), 6),
                         "roc_auc":   round(full_results[model_name].get("roc_auc", 0), 6)
                                      if "roc_auc" in full_results[model_name] else "N/A",
@@ -354,10 +356,8 @@ def main():
                         "model": model_name, "experiment": "CS",
                         "channels": n_selected,
                         "accuracy":  round(cs_results[model_name].get("accuracy", 0), 6),
-                        "precision": round(cs_results[model_name].get("precision", 0), 6)
-                                     if "precision" in cs_results[model_name] else "N/A",
-                        "recall":    round(cs_results[model_name].get("recall", 0), 6)
-                                     if "recall" in cs_results[model_name] else "N/A",
+                        "precision": round(cs_results[model_name].get("precision", 0), 6),
+                        "recall":    round(cs_results[model_name].get("recall", 0), 6),
                         "f1":        round(cs_results[model_name].get("f1", 0), 6),
                         "roc_auc":   round(cs_results[model_name].get("roc_auc", 0), 6)
                                      if "roc_auc" in cs_results[model_name] else "N/A",

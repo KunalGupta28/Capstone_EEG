@@ -15,28 +15,32 @@ CONFIG = {
     'seed': 42, 'dropout': 0.5,
 }
 
-set_seed(42)
-device = get_device()
+def main():
+    set_seed(42)
+    device = get_device()
 
-# Just run EEGNet and CNN to test shapes and multi-class logic
-smoke_registry = {
-    'EEGNet': MODEL_REGISTRY['EEGNet'],
-    'CNN': MODEL_REGISTRY['CNN']
-}
+    # Just run EEGNet and CNN to test shapes and multi-class logic
+    smoke_registry = {
+        'EEGNet': MODEL_REGISTRY['EEGNet'],
+        'CNN': MODEL_REGISTRY['CNN']
+    }
 
-results = train_and_evaluate_subject(
-    subject_id     = 'A01T',
-    processed_dir  = os.path.join(ROOT, 'processed_data', 'BCI-4-2a-preprocessed'),
-    results_dir    = os.path.join(ROOT, 'results'),
-    config         = CONFIG,
-    model_registry = smoke_registry,
-    device         = device,
-)
+    results = train_and_evaluate_subject(
+        subject_id     = 'A01T',
+        processed_dir  = os.path.join(ROOT, 'processed_data', 'BCI-4-2a-preprocessed'),
+        results_dir    = os.path.join(ROOT, 'results'),
+        config         = CONFIG,
+        model_registry = smoke_registry,
+        device         = device,
+    )
 
-print()
-print('=== SMOKE TEST RESULTS ===')
-for model, m in results.items():
-    acc = m['accuracy']
-    f1  = m['f1']
-    print(f'  {model:10s}  Acc={acc:.4f}  F1={f1:.4f}')
-print('SMOKE TEST PASSED')
+    print()
+    print('=== SMOKE TEST RESULTS ===')
+    for model, m in results.items():
+        acc = m['accuracy']
+        f1  = m['f1']
+        print(f'  {model:10s}  Acc={acc:.4f}  F1={f1:.4f}')
+    print('SMOKE TEST PASSED')
+
+if __name__ == "__main__":
+    main()

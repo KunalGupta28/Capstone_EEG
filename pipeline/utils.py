@@ -106,3 +106,86 @@ class EEGDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
+# ---------------------------------------------------------------------------
+# Data Augmentation (training-only)
+# ---------------------------------------------------------------------------
+def augment_eeg(
+    X: np.ndarray,
+    y: np.ndarray,
+    noise_std: float = 0.1,
+    n_noise_copies: int = 2,
+    max_shift: int = 20,
+    n_shift_copies: int = 2,
+) -> tuple:
+    """
+    Generate augmented copies of EEG trials via noise injection and
+    temporal jitter.  Apply ONLY to training data.
+
+    Parameters
+    ----------
+    X : (n_trials, n_channels, n_times) float32
+    y : (n_trials,) int64
+    noise_std       : std of additive Gaussian noise
+    n_noise_copies  : how many noisy copies to create
+    max_shift       : maximum circular shift in samples (both directions)
+    n_shift_copies  : how many shifted copies to create
+
+    Returns
+    -------
+    X_aug, y_aug : augmented arrays (original data is included)
+    """
+    aug_X = [X]
+    aug_y = [y]
+
+    for _ in range(n_noise_copies):
+        noise = np.random.randn(*X.shape).astype(np.float32) * noise_std
+        aug_X.append(X + noise)
+        aug_y.append(y)
+
+    for _ in range(n_shift_copies):
+        shift = np.random.randint(-max_shift, max_shift + 1)
+        aug_X.append(np.roll(X, shift, axis=2))
+        aug_y.append(y)
+
+    return np.concatenate(aug_X, axis=0), np.concatenate(aug_y, axis=0)
+
+
+def sliding_window_expand(
+    X: np.ndarray,
+    y: np.ndarray,
+    window_size: int = 200,
+    stride: int = 50,
+) -> tuple:
+    """
+    Extract overlapping sub-windows from each trial.
+    Apply ONLY to training data.
+
+    Parameters
+    ----------
+    X : (n_trials, n_channels, n_times) float32
+    y : (n_trials,) int64
+    window_size : length of each sub-window in samples
+    stride      : step size between consecutive windows
+
+    Returns
+    -------
+    X_win, y_win : expanded arrays
+    """
+    n_trials, n_ch, n_times = X.shape
+    if n_times <= window_size:
+        return X, y
+
+    windows_per_trial = (n_times - window_size) // stride + 1
+    total = n_trials * windows_per_trial
+    X_out = np.zeros((total, n_ch, window_size), dtype=X.dtype)
+    y_out = np.zeros(total, dtype=y.dtype)
+
+    idx = 0
+    for i in range(n_trials):
+        for start in range(0, n_times - window_size + 1, stride):
+            X_out[idx] = X[i, :, start:start + window_size]
+            y_out[idx] = y[i]
+            idx += 1
+
+    return X_out[:idx], y_out[:idx]
+

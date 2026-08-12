@@ -87,19 +87,16 @@ def preprocess_ds3_subject(file_path):
     y = epochs.events[:, 2]
     print(f"Extracted shape: {X.shape}")
 
-    # Step 9: Normalize (per trial/channel)
-    print("Applying normalization (Z-score)...")
+    # Z-score per trial (over all channels and times combined to preserve relative scales)
     n_trials, n_channels, n_times = X.shape
     X_norm = np.zeros_like(X)
-    
     for i in range(n_trials):
-        for c in range(n_channels):
-            mean_val = np.mean(X[i, c, :])
-            std_val = np.std(X[i, c, :])
-            if std_val > 0:
-                X_norm[i, c, :] = (X[i, c, :] - mean_val) / std_val
-            else:
-                X_norm[i, c, :] = X[i, c, :] - mean_val
+        mean_val = np.mean(X[i])
+        std_val = np.std(X[i])
+        if std_val > 0:
+            X_norm[i] = (X[i] - mean_val) / std_val
+        else:
+            X_norm[i] = X[i] - mean_val
 
     # Step 13: Train-test split (80/20)
     print("Applying 80/20 Train-Test split...")

@@ -93,18 +93,17 @@ def preprocess_subject(subject_id):
     
     print(f"Epochs shape: {X.shape}")
     
-    # Z-score normalization per trial and per channel (prevents test set leakage)
+    # Z-score normalization per trial (over all channels and times to preserve relative scales)
     n_trials, n_channels, n_times = X.shape
     X_norm = np.zeros_like(X)
     
     for i in range(n_trials):
-        for c in range(n_channels):
-            mean_val = np.mean(X[i, c, :])
-            std_val = np.std(X[i, c, :])
-            if std_val > 0:
-                X_norm[i, c, :] = (X[i, c, :] - mean_val) / std_val
-            else:
-                X_norm[i, c, :] = X[i, c, :] - mean_val
+        mean_val = np.mean(X[i])
+        std_val = np.std(X[i])
+        if std_val > 0:
+            X_norm[i] = (X[i] - mean_val) / std_val
+        else:
+            X_norm[i] = X[i] - mean_val
     
     # 6. Save data
     out_x_path = os.path.join(PROCESSED_DIR, f"{subject_id}_X.npy")

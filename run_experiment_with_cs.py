@@ -51,7 +51,7 @@ CONFIG = {
     "n_folds":                  3,
     "epochs":                   50,
     "batch_size":               32,
-    "lr":                       1e-3,
+    "lr":                       5e-4,
     "weight_decay":             1e-4,
     "early_stopping_patience":  10,
     "lr_scheduler_patience":    5,

@@ -1,8 +1,14 @@
 import os
+import sys
 import numpy as np
 import scipy.io as sio
 import mne
-from .config import SAMPLING_RATE, EEG_CHANNELS, EOG_CHANNELS
+
+PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+from preprocessing.config import SAMPLING_RATE, EEG_CHANNELS, EOG_CHANNELS
 
 def load_mat_file(file_path):
     """

@@ -1,14 +1,20 @@
 import os
+import sys
 import argparse
 import numpy as np
 import mne
 from mne.preprocessing import ICA
 
-from .config import (
+# Allow running this file directly as a script or as a module
+PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
+from preprocessing.config import (
     DATA_DIR, PROCESSED_DIR, FREQ_BANDS, EPOCH_TMIN, EPOCH_TMAX, 
     EEG_CHANNELS, EOG_CHANNELS
 )
-from .bci_iv_2a_loader import load_mat_file
+from preprocessing.bci_iv_2a_loader import load_mat_file
 
 def preprocess_subject(subject_id):
     """

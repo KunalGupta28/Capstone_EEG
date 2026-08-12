@@ -7,6 +7,11 @@ from sklearn.model_selection import train_test_split
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'BCI_IV_1_mat')
+if not os.path.exists(DATA_DIR):
+    fallback_path = os.path.join(os.path.dirname(BASE_DIR), 'data', 'BCI_IV_1_mat')
+    if os.path.exists(fallback_path):
+        DATA_DIR = fallback_path
+
 PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI_IV_1_mat-preprocessed')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 

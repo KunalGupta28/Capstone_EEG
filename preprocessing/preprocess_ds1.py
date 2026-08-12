@@ -5,13 +5,34 @@ import scipy.io as sio
 import mne
 from sklearn.model_selection import train_test_split
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, 'BCI_IV_1_mat')
-if not os.path.exists(DATA_DIR):
-    fallback_path = os.path.join(os.path.dirname(BASE_DIR), 'data', 'BCI_IV_1_mat')
-    if os.path.exists(fallback_path):
-        DATA_DIR = fallback_path
+def find_data_dir(default_dir_name: str, pattern: str = "*.mat") -> str:
+    import fnmatch
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # 1. Try local repository directory first
+    local_path = os.path.join(base_dir, default_dir_name)
+    if os.path.exists(local_path):
+        for root, _, files in os.walk(local_path):
+            for f in files:
+                if fnmatch.fnmatch(f, pattern):
+                    return local_path
 
+    # 2. Search parent directory (/workspace) recursively
+    parent_dir = os.path.dirname(base_dir)
+    print(f"[Diagnostic] Searching for directory with pattern '{pattern}' inside '{parent_dir}'...")
+    
+    for root, _, files in os.walk(parent_dir):
+        if "processed_data" in root or ".git" in root or "results" in root:
+            continue
+        for f in files:
+            if fnmatch.fnmatch(f, pattern):
+                print(f"[Diagnostic] Found matching files in directory: '{root}'")
+                return root
+                
+    return local_path
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = find_data_dir('BCI_IV_1_mat', 'BCICIV_calib_ds1*.mat')
 PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI_IV_1_mat-preprocessed')
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 

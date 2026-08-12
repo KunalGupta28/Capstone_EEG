@@ -2,12 +2,34 @@ import os
 
 # --- Paths ---
 # You can override these via environment variables or modify directly
+def find_data_dir(default_dir_name: str, pattern: str = "*.mat") -> str:
+    import fnmatch
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # 1. Try local repository directory first
+    local_path = os.path.join(base_dir, default_dir_name)
+    if os.path.exists(local_path):
+        for root, _, files in os.walk(local_path):
+            for f in files:
+                if fnmatch.fnmatch(f, pattern):
+                    return local_path
+
+    # 2. Search parent directory (/workspace) recursively
+    parent_dir = os.path.dirname(base_dir)
+    print(f"[Diagnostic] Searching for directory with pattern '{pattern}' inside '{parent_dir}'...")
+    
+    for root, _, files in os.walk(parent_dir):
+        if "processed_data" in root or ".git" in root or "results" in root:
+            continue
+        for f in files:
+            if fnmatch.fnmatch(f, pattern):
+                print(f"[Diagnostic] Found matching files in directory: '{root}'")
+                return root
+                
+    return local_path
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, 'BCI-4-2a')
-if not os.path.exists(DATA_DIR):
-    fallback_path = os.path.join(os.path.dirname(BASE_DIR), 'data', 'BCI-4-2a')
-    if os.path.exists(fallback_path):
-        DATA_DIR = fallback_path
+DATA_DIR = find_data_dir('BCI-4-2a', 'A01T.mat')
 
 PROCESSED_DIR = os.path.join(BASE_DIR, 'processed_data', 'BCI-4-2a-preprocessed')
 

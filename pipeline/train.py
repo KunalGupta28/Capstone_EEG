@@ -32,11 +32,16 @@ from pipeline.eval import (
 )
 
 
-def _get_stride(n_times: int) -> int:
-    """Return appropriate stride for sliding window based on signal length."""
-    if n_times > 500:
-        return 150
-    return 50
+def _should_window(n_times: int) -> bool:
+    """Only apply sliding-window expansion for short signals.
+
+    Long signals (e.g. BCI-4-2a, 1001 samples / 4 sec at 250 Hz) contain
+    full motor-imagery temporal dynamics.  Chopping them into 200-sample
+    (0.8 s) windows destroys discriminative information → near-chance
+    accuracy.  Short signals (301 samples / 3 sec at 100 Hz) benefit
+    from windowing as a data augmentation strategy.
+    """
+    return n_times <= 500
 
 
 # ---------------------------------------------------------------------------
@@ -182,38 +187,33 @@ def run_cross_validation(
         # Data augmentation (training fold only)
         # ------------------------------------------------------------------
         n_train_raw = X_tr.shape[0]
+        n_times_raw = X_tr.shape[2]
 
-        # Sliding-window expansion (creates ~3x samples for 301-sample epochs, ~6x for 1001-sample)
-        stride = _get_stride(X_tr.shape[2])
-        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=stride)
-
-        # Dynamic augmentation scale based on number of windowed trials to prevent slow training
-        n_win_trials = X_tr.shape[0]
-        if n_win_trials > 1000:
-            n_noise = 1
-            n_shift = 1
-        elif n_win_trials > 500:
-            n_noise = 1
-            n_shift = 2
+        if _should_window(n_times_raw):
+            # Short signals (≤500 samples): sliding window + augmentation
+            X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=50)
+            X_tr, y_tr = augment_eeg(
+                X_tr, y_tr,
+                noise_std=0.1,
+                n_noise_copies=2,
+                max_shift=15,
+                n_shift_copies=2,
+            )
+            X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=50)
         else:
-            n_noise = 2
-            n_shift = 2
-
-        # Noise + shift augmentation
-        X_tr, y_tr = augment_eeg(
-            X_tr, y_tr,
-            noise_std=0.1,
-            n_noise_copies=n_noise,
-            max_shift=15,
-            n_shift_copies=n_shift,
-        )
-
-        # Also window-expand validation for consistent input size,
-        # but WITHOUT augmentation (no noise/shift)
-        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=stride)
+            # Long signals (>500 samples, e.g. BCI-4-2a): use full signal,
+            # light noise augmentation only (preserves temporal structure)
+            X_tr, y_tr = augment_eeg(
+                X_tr, y_tr,
+                noise_std=0.05,
+                n_noise_copies=2,
+                max_shift=20,
+                n_shift_copies=1,
+            )
 
         print(f"    [CV] Fold {fold}: {n_train_raw} raw -> "
-              f"{X_tr.shape[0]} augmented train, {X_val.shape[0]} val windows", flush=True)
+              f"{X_tr.shape[0]} augmented train (T={X_tr.shape[2]}), "
+              f"{X_val.shape[0]} val (T={X_val.shape[2]})", flush=True)
 
         train_ds  = EEGDataset(X_tr, y_tr)
         val_ds    = EEGDataset(X_val, y_val)
@@ -366,20 +366,21 @@ def train_and_evaluate_subject(
             torch.save(best_state, weight_path)
 
         # -- Evaluate on held-out test set ---------------------------------
-        # Apply sliding window to test set for consistent input size
-        stride = _get_stride(X_test.shape[2])
-        X_test_win, y_test_win = sliding_window_expand(
-            X_test, y_test, window_size=200, stride=stride
-        )
+        if _should_window(X_test.shape[2]):
+            X_test_eval, y_test_eval = sliding_window_expand(
+                X_test, y_test, window_size=200, stride=50
+            )
+        else:
+            X_test_eval, y_test_eval = X_test, y_test
 
         # Build model with the windowed n_times
         test_model_kwargs = model_kwargs.copy()
-        test_model_kwargs["n_times"] = X_test_win.shape[2]
+        test_model_kwargs["n_times"] = X_test_eval.shape[2]
         model = model_cls(**test_model_kwargs, dropout=config["dropout"]).to(device)
         if best_state is not None:
             model.load_state_dict(best_state)
 
-        test_ds = EEGDataset(X_test_win, y_test_win)
+        test_ds = EEGDataset(X_test_eval, y_test_eval)
         test_dl = DataLoader(test_ds, batch_size=config["batch_size"],
                              shuffle=False, num_workers=0)
 
@@ -390,7 +391,7 @@ def train_and_evaluate_subject(
         else:
             test_pred   = np.argmax(test_logits, axis=1)
 
-        test_metrics = compute_metrics(y_test_win, test_logits, is_binary=is_binary)
+        test_metrics = compute_metrics(y_test_eval, test_logits, is_binary=is_binary)
         subject_results[model_name] = test_metrics
 
         # -- Save predictions ----------------------------------------------
@@ -400,7 +401,7 @@ def train_and_evaluate_subject(
 
         # -- Confusion matrix ---------------------------------------------
         save_confusion_matrix(
-            y_test_win, test_pred,
+            y_test_eval, test_pred,
             save_path=os.path.join(plots_dir, f"{model_name}_cm.png"),
             title=f"{subject_id} | {model_name} | Confusion Matrix",
             num_classes=num_classes

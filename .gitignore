@@ -12,9 +12,9 @@ results/
 EEG_COPY/_temp_cs_data/
 
 # Raw EEG Datasets
-BCI-4-2a/
-BCI_IV_1_mat/
-BCI -III-IVa/
+# BCI-4-2a/
+# BCI_IV_1_mat/
+# BCI -III-IVa/
 
 # Preprocessed data outputs (highly recommended as they are large binary files)
 processed_data/

@@ -1,0 +1,163 @@
+%%
+%% This is a LaTeX document using the acmart class with sigconf style.
+%% It has been prepared for the conference paper:
+%% "LS-BJOA with Hybrid CNN-LSTM for Efficient EEG-Based Motor Imagery Classification in Brain-Computer Interfaces"
+%%
+
+\documentclass[sigconf]{acmart}
+
+%% Rights management information.
+\setcopyright{acmlicensed}
+\copyrightyear{2025}
+\acmYear{2025}
+\acmConference[IEEE BCI 2025]{Proceedings of the IEEE Conference on Neural Engineering}{2025}{To be determined}
+\acmDOI{} % DOI to be filled before publication
+\acmISBN{} % ISBN to be filled before publication
+
+%% Submission dates (commented out before submission)
+% \received{Fill in before submission}
+% \received[revised]{Fill in before submission}
+% \received[accepted]{Fill in before submission}
+
+%% Define short authors for page headers
+\renewcommand{\shortauthors}{Gupta et al.}
+
+\begin{document}
+
+%% The title of the paper and short title for page headers
+\title[Gupta et al.]{LS-BJOA with Hybrid CNN-LSTM for Efficient EEG-Based Motor Imagery Classification in Brain-Computer Interfaces}
+
+%% Authors and Affiliations
+\author{Kunal Gupta}
+\authornote{These authors contributed equally to this research.}
+\email{[KUNAL_EMAIL]}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+\author{Aman Singh}
+\authornotemark[1]
+\email{[AMAN_EMAIL]}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+\author{Karan Singh}
+\authornotemark[1]
+\email{[KARAN_EMAIL]}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+\author{Anushka Ahlawat}
+\authornotemark[1]
+\email{[ANUSHKA_EMAIL]}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+\author{Dr. Simranjit Kaur}
+\email{simranjit.kaur@thapar.edu}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+\author{Dr. Shubhra Dwivedi}
+\email{shubhra.dwivedi@thapar.edu}
+\affiliation{%
+  \department{Department of Computer Science and Engineering}
+  \institution{Thapar Institute of Engineering and Technology}
+  \city{Patiala}
+  \state{Punjab}
+  \country{India}
+}
+
+%% Abstract (147 words)
+\begin{abstract}
+High channel counts in EEG-based brain-computer interfaces (BCIs) impose significant computational burdens, limiting practical deployment of real-time assistive communication systems for patients with amyotrophic lateral sclerosis (ALS). Existing electrode selection techniques typically pair with classical classifiers like support vector machines, whereas deep learning methods generally process full, unoptimized channel configurations. No prior studies have integrated metaheuristic channel selection with deep neural networks for motor imagery. We address this gap by combining the Logistic S-shaped Binary Jaya Optimization Algorithm (LS-BJOA) with a hybrid CNN-LSTM pipeline. We evaluate our framework on three benchmarks: BCI Competition IV-2a, BCI Competition IV Dataset 1, and BCI Competition III Dataset IVa. The integrated system achieves accuracies of [ACCURACY_DS1], [ACCURACY_DS2], and [ACCURACY_DS3] using only [CHANNELS_DS1], [CHANNELS_DS2], and [CHANNELS_DS3] channels, respectively. Reducing electrode overhead enhances feasibility for resource-constrained, real-time BCI applications.
+\end{abstract}
+
+% CCS concepts — to be added before camera ready
+
+%% Keywords
+\keywords{Brain-Computer Interface, Motor Imagery, EEG Channel Selection, LS-BJOA, CNN-LSTM, Amyotrophic Lateral Sclerosis}
+
+\maketitle
+
+\section{Introduction}
+Amyotrophic lateral sclerosis (ALS) is a progressive neurodegenerative disease that severely impairs voluntary motor pathways, eventually leading to a complete loss of muscle control. Despite physical paralysis, patient cognitive function remains largely preserved. Traditional assistive systems, such as switch-based interfaces or eye-tracking devices, become ineffective in the late stages of the disease as residual ocular or physical movement degrades. Non-invasive electroencephalography (EEG) brain-computer interfaces (BCIs) offer a viable alternative by capturing electrical brain activity directly from the scalp, enabling communication and control without requiring physical muscular exertion \cite{wolpaw2002bci}.
+
+A major challenge in EEG-based motor imagery (MI) systems is the high dimensionality of the recorded signal, which frequently spans dozens to over a hundred electrodes. Many of these channels contain redundant or noisy information irrelevant to the underlying cognitive task, increasing computational overhead, slowing inference times, and potentially degrading classifier performance. While metaheuristic channel selection algorithms successfully reduce electrode counts, they are typically paired with classical classifiers such as support vector machines or linear discriminant analysis \cite{tiwari2023lsbjoa}. These linear models struggle to represent the highly non-linear spatiotemporal features of EEG data. Meanwhile, modern deep learning architectures like EEGNet \cite{lawhern2018eegnet} process the entire electrode layout, ignoring the optimization of the sensor configuration itself.
+
+To address this issue, we integrate the Logistic S-shaped Binary Jaya Optimization Algorithm (LS-BJOA) proposed by Tiwari et al. \cite{tiwari2023lsbjoa} with a hybrid deep learning classifier consisting of a convolutional neural network (CNN) and a long short-term memory (LSTM) network. Under this framework, LS-BJOA optimizes the electrode subset, the CNN extracts local spatial patterns from the active channels, and the LSTM models sequential temporal dynamics. We evaluate the proposed approach on three public benchmark datasets---BCI Competition IV-2a, BCI Competition IV Dataset 1, and BCI Competition III Dataset IVa---facilitating a direct comparison with previous baseline models. Furthermore, we conduct an extensive benchmark evaluating six distinct deep learning configurations (EEGNet, CNN, RNN, LSTM, CNN-RNN, and CNN-LSTM) under full and reduced channel sets.
+
+The rest of this paper is organized as follows: Section~\ref{sec:datasets} describes the benchmark datasets. Section~\ref{sec:method} presents the proposed methodology. Section~\ref{sec:results} reports experimental results and discussion. Section~\ref{sec:conclusion} concludes the paper.
+
+\section{Datasets}
+\label{sec:datasets}
+We evaluate our proposed channel selection and classification pipeline on three publicly available brain-computer interface benchmark datasets. Using the exact datasets from the baseline study \cite{tiwari2023lsbjoa} allows for a direct performance comparison against traditional SVM-based classifiers. These datasets present a diverse set of challenge scenarios, varying in the number of electrodes, task classes, and temporal trial structures, covering both binary and multiclass motor imagery paradigms.
+
+The first dataset is the BCI Competition IV Dataset 2a \cite{brunner2008bci4}. It contains motor imagery records from 9 healthy subjects. The recording configuration consists of 22 EEG channels and 3 additional EOG channels used to monitor eye movements, with signals sampled at 250~Hz. During the sessions, subjects performed four distinct motor imagery tasks: left hand, right hand, feet, and tongue movement. Each subject participated in two sessions composed of 6 runs, yielding a total of 288 trials per session. The raw recordings were stored in the general data format (.gdf) and bandpass filtered between 0.5 and 100~Hz with a notch filter at 50~Hz.
+
+The second dataset is the BCI Competition IV Dataset 1 \cite{tangermann2012bci4}. It comprises recordings from 7 healthy participants using 59 EEG channels sampled at 100~Hz. The experimental setup utilizes a binary classification paradigm, where subjects performed motor imagery corresponding to two classes (either left hand and foot, or right hand and left hand, depending on the participant). The dataset contains two calibration runs of 100 trials each, where the trials of the calibration run are split into an 80/20 train-test ratio for model validation.
+
+The third dataset is the BCI Competition III Dataset IVa \cite{blankertz2006bci3}. It includes motor imagery data from 5 subjects (designated as aa, al, av, aw, and ay) recorded over 118 EEG channels at a sampling frequency of 100~Hz. The binary task requires distinguishing between left hand and right hand motor imagery. For each trial, a visual cue was presented for 3.5~s. Each subject performed a total of 140 trials; the dataset splits these into 110 trials for training and 30 trials for validation. Given the large number of electrode channels, this dataset serves as the primary testbed for assessing the effectiveness of the channel reduction algorithm.
+
+Table~\ref{tab:datasets} summarizes the recording characteristics and task paradigms of the benchmark datasets.
+
+\begin{table}[htbp]
+  \caption{Summary of benchmark EEG datasets used for evaluation.}
+  \label{tab:datasets}
+  \centering
+  \begin{tabular}{lccccc}
+    \toprule
+    Dataset & Subjects & Channels & Classes & Freq (Hz) & Task Type \\
+    \midrule
+    BCI IV-2a & 9 & 22 & 4 & 250 & Multi-class \\
+    BCI IV-1 & 7 & 59 & 2 & 100 & Binary \\
+    BCI III-IVa & 5 & 118 & 2 & 100 & Binary \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% ============================================================
+% TODO: Section III — Methodology
+% Subsections: Preprocessing, LS-BJOA Channel Selection,
+%              CNN-LSTM Architecture, Experimental Setup
+% ============================================================
+
+% ============================================================
+% TODO: Section IV — Results and Discussion
+% Tables: per-dataset Full vs CS comparison across 6 models
+% Figures: fitness curves, channel frequency topomaps
+% ============================================================
+
+% ============================================================
+% TODO: Section V — Conclusion
+% ============================================================
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\end{document}
+\endinput

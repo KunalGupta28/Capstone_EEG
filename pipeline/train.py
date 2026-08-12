@@ -32,6 +32,13 @@ from pipeline.eval import (
 )
 
 
+def _get_stride(n_times: int) -> int:
+    """Return appropriate stride for sliding window based on signal length."""
+    if n_times > 500:
+        return 150
+    return 50
+
+
 # ---------------------------------------------------------------------------
 # Single-epoch helpers
 # ---------------------------------------------------------------------------
@@ -176,21 +183,34 @@ def run_cross_validation(
         # ------------------------------------------------------------------
         n_train_raw = X_tr.shape[0]
 
-        # Sliding-window expansion (creates ~3x samples for 301-sample epochs)
-        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=50)
+        # Sliding-window expansion (creates ~3x samples for 301-sample epochs, ~6x for 1001-sample)
+        stride = _get_stride(X_tr.shape[2])
+        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=stride)
 
-        # Noise + shift augmentation (creates ~5x samples)
+        # Dynamic augmentation scale based on number of windowed trials to prevent slow training
+        n_win_trials = X_tr.shape[0]
+        if n_win_trials > 1000:
+            n_noise = 1
+            n_shift = 1
+        elif n_win_trials > 500:
+            n_noise = 1
+            n_shift = 2
+        else:
+            n_noise = 2
+            n_shift = 2
+
+        # Noise + shift augmentation
         X_tr, y_tr = augment_eeg(
             X_tr, y_tr,
             noise_std=0.1,
-            n_noise_copies=2,
+            n_noise_copies=n_noise,
             max_shift=15,
-            n_shift_copies=2,
+            n_shift_copies=n_shift,
         )
 
         # Also window-expand validation for consistent input size,
         # but WITHOUT augmentation (no noise/shift)
-        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=50)
+        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=stride)
 
         print(f"    [CV] Fold {fold}: {n_train_raw} raw -> "
               f"{X_tr.shape[0]} augmented train, {X_val.shape[0]} val windows", flush=True)
@@ -227,6 +247,9 @@ def run_cross_validation(
 
             train_losses.append(t_loss)
             val_losses.append(v_loss)
+
+            if epoch == 1 or epoch % 10 == 0 or epoch == epochs:
+                print(f"      Epoch {epoch:3d}/{epochs:3d} | Train Loss: {t_loss:.4f} | Val Loss: {v_loss:.4f}", flush=True)
 
             if v_loss < best_fold_loss:
                 best_fold_loss  = v_loss
@@ -344,8 +367,9 @@ def train_and_evaluate_subject(
 
         # -- Evaluate on held-out test set ---------------------------------
         # Apply sliding window to test set for consistent input size
+        stride = _get_stride(X_test.shape[2])
         X_test_win, y_test_win = sliding_window_expand(
-            X_test, y_test, window_size=200, stride=50
+            X_test, y_test, window_size=200, stride=stride
         )
 
         # Build model with the windowed n_times

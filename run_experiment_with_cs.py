@@ -48,13 +48,13 @@ from visualization.topomap           import plot_channel_selection_frequency, pl
 # Configuration
 # ---------------------------------------------------------------------------
 CONFIG = {
-    "n_folds":                  5,
-    "epochs":                   150,
+    "n_folds":                  3,
+    "epochs":                   50,
     "batch_size":               32,
     "lr":                       1e-3,
     "weight_decay":             1e-4,
-    "early_stopping_patience":  15,
-    "lr_scheduler_patience":    7,
+    "early_stopping_patience":  10,
+    "lr_scheduler_patience":    5,
     "seed":                     42,
     "dropout":                  0.5,
 }

@@ -39,8 +39,8 @@ def _extract_bandpower_features(
     """
     n_trials, n_channels, n_times = X.shape
 
-    # Welch PSD — use a segment length that fits the data
-    nperseg = min(128, n_times)
+    # Welch PSD — dynamic segment length for ~1Hz resolution
+    nperseg = min(int(sampling_rate), n_times)
     freqs, psd = welch(X, fs=sampling_rate, nperseg=nperseg, axis=2)
     # psd shape: (n_trials, n_channels, n_freqs)
 
@@ -131,7 +131,7 @@ def evaluate_fitness(
         return 0.0
 
     # 7. Fast Linear SVM Proxy Classifier
-    clf = LinearSVC(C=0.1, max_iter=500, dual=False, random_state=42)
+    clf = LinearSVC(C=0.1, max_iter=2000, dual=False, random_state=42)
 
     try:
         clf.fit(X_train_scaled, y_train[train_idx])

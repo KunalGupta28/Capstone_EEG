@@ -66,18 +66,18 @@ DATASETS = {
         "num_classes": 4,
         "sampling_rate": 250.0,
     },
-    "BCI_IV_1": {
-        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
-        "is_binary": True,
-        "num_classes": 2,
-        "sampling_rate": 100.0,
-    },
-    "BCI_III_IVa": {
-        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
-        "is_binary": True,
-        "num_classes": 2,
-        "sampling_rate": 100.0,
-    },
+    # "BCI_IV_1": {
+    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
+    #     "is_binary": True,
+    #     "num_classes": 2,
+    #     "sampling_rate": 100.0,
+    # },
+    # "BCI_III_IVa": {
+    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
+    #     "is_binary": True,
+    #     "num_classes": 2,
+    #     "sampling_rate": 100.0,
+    # },
 }
 
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")

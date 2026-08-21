@@ -65,17 +65,13 @@ class EEGNet(nn.Module):
             nn.Dropout(dropout),
         )
 
-        # Compute flattened size dynamically
-        self._flat_size = self._get_flat_size()
-        self.classifier = nn.Linear(self._flat_size, num_classes)
+        # Fix temporal dim to a constant size before the classifier,
+        # so parameter count is independent of input T (avoids overfitting
+        # on long-signal datasets like BCI-4-2a with T=660).
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 8))
 
-    def _get_flat_size(self) -> int:
-        with torch.no_grad():
-            dummy = torch.zeros(1, 1, self.n_channels, self.n_times)
-            x = self.block1(dummy)
-            x = self.depthwise(x)
-            x = self.separable(x)
-            return x.numel()
+        self._flat_size = F2 * 8
+        self.classifier = nn.Linear(self._flat_size, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, C, T) → (B, 1, C, T)
@@ -83,6 +79,7 @@ class EEGNet(nn.Module):
         x = self.block1(x)
         x = self.depthwise(x)
         x = self.separable(x)
+        x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
@@ -150,21 +147,13 @@ class CNN(nn.Module):
         self.bn = nn.BatchNorm2d(hidden_size)
         self.pool = nn.AvgPool2d(kernel_size=(1, 75), stride=(1, 15))
         self.dropout = nn.Dropout(dropout)
-        
-        self._flat_size = self._get_flat_size()
-        self.classifier = nn.Linear(self._flat_size, num_classes)
 
-    def _get_flat_size(self) -> int:
-        with torch.no_grad():
-            dummy = torch.zeros(1, 1, self.n_channels, self.n_times)
-            x = self.temporal(dummy)
-            x = self.spatial(x)
-            x = self.bn(x)
-            x = x ** 2
-            x = self.pool(x)
-            x = torch.log(torch.clamp(x, min=1e-6))
-            x = self.dropout(x)
-            return x.numel()
+        # Fix temporal dim to a constant size before the classifier,
+        # so parameter count is independent of input T.
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 8))
+
+        self._flat_size = hidden_size * 8
+        self.classifier = nn.Linear(self._flat_size, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, C, T) -> (B, 1, C, T)
@@ -176,6 +165,7 @@ class CNN(nn.Module):
         x = self.pool(x)
         x = torch.log(torch.clamp(x, min=1e-6))
         x = self.dropout(x)
+        x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 

@@ -32,18 +32,6 @@ from pipeline.eval import (
 )
 
 
-def _should_window(n_times: int) -> bool:
-    """Only apply sliding-window expansion for short signals.
-
-    Long signals (e.g. BCI-4-2a, 1001 samples / 4 sec at 250 Hz) contain
-    full motor-imagery temporal dynamics.  Chopping them into 200-sample
-    (0.8 s) windows destroys discriminative information → near-chance
-    accuracy.  Short signals (301 samples / 3 sec at 100 Hz) benefit
-    from windowing as a data augmentation strategy.
-    """
-    return n_times <= 500
-
-
 # ---------------------------------------------------------------------------
 # Single-epoch helpers
 # ---------------------------------------------------------------------------
@@ -189,9 +177,14 @@ def run_cross_validation(
         n_train_raw = X_tr.shape[0]
         n_times_raw = X_tr.shape[2]
 
-        if _should_window(n_times_raw):
-            # Short signals (≤500 samples): sliding window + augmentation
-            X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=200, stride=50)
+        dyn_window = int(n_times_raw * 0.66)
+        dyn_stride = int(n_times_raw * 0.16)
+
+        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=dyn_window, stride=dyn_stride)
+        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=dyn_window, stride=dyn_stride)
+
+        if n_times_raw <= 500:
+            # Short signals (≤500 samples)
             X_tr, y_tr = augment_eeg(
                 X_tr, y_tr,
                 noise_std=0.1,
@@ -199,10 +192,8 @@ def run_cross_validation(
                 max_shift=15,
                 n_shift_copies=2,
             )
-            X_val, y_val = sliding_window_expand(X_val, y_val, window_size=200, stride=50)
         else:
-            # Long signals (>500 samples, e.g. BCI-4-2a): use full signal,
-            # light noise augmentation only (preserves temporal structure)
+            # Long signals (>500 samples)
             X_tr, y_tr = augment_eeg(
                 X_tr, y_tr,
                 noise_std=0.05,
@@ -366,12 +357,12 @@ def train_and_evaluate_subject(
             torch.save(best_state, weight_path)
 
         # -- Evaluate on held-out test set ---------------------------------
-        if _should_window(X_test.shape[2]):
-            X_test_eval, y_test_eval = sliding_window_expand(
-                X_test, y_test, window_size=200, stride=50
-            )
-        else:
-            X_test_eval, y_test_eval = X_test, y_test
+        dyn_window_test = int(X_test.shape[2] * 0.66)
+        dyn_stride_test = int(X_test.shape[2] * 0.16)
+
+        X_test_eval, y_test_eval = sliding_window_expand(
+            X_test, y_test, window_size=dyn_window_test, stride=dyn_stride_test
+        )
 
         # Build model with the windowed n_times
         test_model_kwargs = model_kwargs.copy()

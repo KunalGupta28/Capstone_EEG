@@ -123,7 +123,8 @@ def _make_criterion(y_train_fold: np.ndarray, is_binary: bool, device: torch.dev
         weights = 1.0 / (class_counts.astype(float) + 1e-6)
         weights = weights / weights.sum() * len(class_counts)
         return nn.CrossEntropyLoss(
-            weight=torch.tensor(weights, dtype=torch.float32).to(device)
+            weight=torch.tensor(weights, dtype=torch.float32).to(device),
+            label_smoothing=0.1
         )
 
 
@@ -138,6 +139,7 @@ def run_cross_validation(
     config: dict,
     device: torch.device,
     is_binary: bool = False,
+    sampling_rate: float = 100.0,
 ):
     """
     5-fold Stratified Cross-Validation with data augmentation.
@@ -177,30 +179,28 @@ def run_cross_validation(
         n_train_raw = X_tr.shape[0]
         n_times_raw = X_tr.shape[2]
 
-        dyn_window = int(n_times_raw * 0.66)
-        dyn_stride = int(n_times_raw * 0.16)
+        if is_binary:
+            dyn_window = int(n_times_raw * 0.66)
+            dyn_stride = int(n_times_raw * 0.16)
 
-        X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=dyn_window, stride=dyn_stride)
-        X_val, y_val = sliding_window_expand(X_val, y_val, window_size=dyn_window, stride=dyn_stride)
+            X_tr, y_tr = sliding_window_expand(X_tr, y_tr, window_size=dyn_window, stride=dyn_stride)
+            X_val, y_val = sliding_window_expand(X_val, y_val, window_size=dyn_window, stride=dyn_stride)
 
-        if n_times_raw <= 500:
-            # Short signals (≤500 samples)
-            X_tr, y_tr = augment_eeg(
-                X_tr, y_tr,
-                noise_std=0.1,
-                n_noise_copies=2,
-                max_shift=15,
-                n_shift_copies=2,
-            )
+            if n_times_raw <= 500:
+                X_tr, y_tr = augment_eeg(X_tr, y_tr, noise_std=0.1, n_noise_copies=2, max_shift=15, n_shift_copies=2)
+            else:
+                X_tr, y_tr = augment_eeg(X_tr, y_tr, noise_std=0.05, n_noise_copies=2, max_shift=20, n_shift_copies=1)
         else:
-            # Long signals (>500 samples)
-            X_tr, y_tr = augment_eeg(
-                X_tr, y_tr,
-                noise_std=0.05,
-                n_noise_copies=2,
-                max_shift=20,
-                n_shift_copies=1,
-            )
+            # Multiclass Protocol: Fixed temporal crop [0.5s to 3.5s]
+            start_idx = int(0.5 * sampling_rate)
+            end_idx = int(3.5 * sampling_rate)
+            if end_idx > n_times_raw:
+                end_idx = n_times_raw
+            
+            X_tr = X_tr[:, :, start_idx:end_idx]
+            X_val = X_val[:, :, start_idx:end_idx]
+            
+            X_tr, y_tr = augment_eeg(X_tr, y_tr, noise_std=0.05, n_noise_copies=2, max_shift=10, n_shift_copies=1)
 
         print(f"    [CV] Fold {fold}: {n_train_raw} raw -> "
               f"{X_tr.shape[0]} augmented train (T={X_tr.shape[2]}), "
@@ -284,6 +284,7 @@ def train_and_evaluate_subject(
     config: dict,
     model_registry: dict,
     device: torch.device,
+    sampling_rate: float = 100.0,
 ) -> dict:
     """
     Full pipeline for one subject × all models.
@@ -328,6 +329,7 @@ def train_and_evaluate_subject(
             "n_times": n_times,
             "num_classes": out_features,
             "hidden_size": hidden_size,
+            "sampling_rate": sampling_rate,
         }
 
         # 5-Fold CV on training data
@@ -339,6 +341,7 @@ def train_and_evaluate_subject(
             config=config,
             device=device,
             is_binary=is_binary,
+            sampling_rate=sampling_rate,
         )
 
         # -- Plot loss curves for each fold --------------------------------
@@ -357,12 +360,20 @@ def train_and_evaluate_subject(
             torch.save(best_state, weight_path)
 
         # -- Evaluate on held-out test set ---------------------------------
-        dyn_window_test = int(X_test.shape[2] * 0.66)
-        dyn_stride_test = int(X_test.shape[2] * 0.16)
+        if is_binary:
+            dyn_window_test = int(X_test.shape[2] * 0.66)
+            dyn_stride_test = int(X_test.shape[2] * 0.16)
 
-        X_test_eval, y_test_eval = sliding_window_expand(
-            X_test, y_test, window_size=dyn_window_test, stride=dyn_stride_test
-        )
+            X_test_eval, y_test_eval = sliding_window_expand(
+                X_test, y_test, window_size=dyn_window_test, stride=dyn_stride_test
+            )
+        else:
+            start_idx = int(0.5 * sampling_rate)
+            end_idx = int(3.5 * sampling_rate)
+            if end_idx > X_test.shape[2]:
+                end_idx = X_test.shape[2]
+            X_test_eval = X_test[:, :, start_idx:end_idx]
+            y_test_eval = y_test
 
         # Build model with the windowed n_times
         test_model_kwargs = model_kwargs.copy()

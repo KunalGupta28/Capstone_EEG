@@ -18,6 +18,7 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     confusion_matrix,
+    cohen_kappa_score,
 )
 
 
@@ -46,17 +47,29 @@ def compute_metrics(y_true: np.ndarray, y_pred_logits: np.ndarray, is_binary: bo
             "recall":    recall_score(y_true, y_pred, zero_division=0),
             "f1":        f1_score(y_true, y_pred, zero_division=0),
             "roc_auc":   roc_auc_score(y_true, y_scores) if len(np.unique(y_true)) > 1 else 0.5,
+            "kappa":     cohen_kappa_score(y_true, y_pred),
         }
     else:
         # y_pred_logits is (batch, num_classes)
         y_pred = np.argmax(y_pred_logits, axis=1)
         y_true = y_true.astype(int)
 
+        # Convert logits to probabilities for multiclass ROC AUC
+        exp_logits = np.exp(y_pred_logits - np.max(y_pred_logits, axis=1, keepdims=True))
+        y_scores = exp_logits / np.sum(exp_logits, axis=1, keepdims=True)
+        
+        try:
+            auc = roc_auc_score(y_true, y_scores, multi_class='ovr', average='macro')
+        except ValueError:
+            auc = 0.5
+
         metrics = {
             "accuracy":  accuracy_score(y_true, y_pred),
             "precision": precision_score(y_true, y_pred, average="macro", zero_division=0),
             "recall":    recall_score(y_true, y_pred, average="macro", zero_division=0),
             "f1":        f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "roc_auc":   auc,
+            "kappa":     cohen_kappa_score(y_true, y_pred),
         }
     return metrics
 
@@ -131,30 +144,19 @@ def print_metrics_table(results_dict: dict) -> None:
     Pretty-print a nested dict of results:
       { subject_id: { model_name: { metric: value } } }
     """
-    header = f"{'Subject':<22} {'Model':<12} {'Acc':>7} {'Prec':>7} {'Rec':>7} {'F1':>7} {'AUC':>7}"
+    header = f"{'Subject':<22} {'Model':<12} {'Acc':>7} {'F1':>7} {'Kappa':>7} {'AUC':>7}"
     sep    = "-" * len(header)
     print("\n" + sep)
     print(header)
     print(sep)
     for subject, models in sorted(results_dict.items()):
         for model_name, m in sorted(models.items()):
-            if "roc_auc" in m:
-                # Binary metrics
-                print(
-                    f"{subject:<22} {model_name:<12} "
-                    f"{m.get('accuracy',  0):.4f}  "
-                    f"{m.get('precision', 0):.4f}  "
-                    f"{m.get('recall',    0):.4f}  "
-                    f"{m.get('f1',        0):.4f}  "
-                    f"{m.get('roc_auc',   0):.4f}"
-                )
-            else:
-                # Multi-class metrics
-                print(
-                    f"{subject:<22} {model_name:<12} "
-                    f"{m.get('accuracy',  0):.4f}  "
-                    f"{'N/A':>7}  {'N/A':>7}  "
-                    f"{m.get('f1',        0):.4f}  "
-                    f"{'N/A':>7}"
-                )
+            print(
+                f"{subject:<22} {model_name:<12} "
+                f"{m.get('accuracy',  0):.4f}  "
+                f"{m.get('f1',        0):.4f}  "
+                f"{m.get('kappa',     0):.4f}  "
+                f"{m.get('roc_auc',   0):.4f}"
+            )
     print(sep + "\n")
+

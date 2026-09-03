@@ -1,7 +1,7 @@
 """
 models/models.py
 ================
-Six deep learning model architectures for EEG Motor Imagery classification.
+Seven deep learning model architectures for EEG Motor Imagery classification.
 All models accept input shape: (batch, n_channels, n_times)
 
 Changes from baseline:
@@ -30,13 +30,18 @@ class EEGNet(nn.Module):
     """
 
     def __init__(self, n_channels: int, n_times: int, num_classes: int = 4, dropout: float = 0.5,
-                 F1: int = 8, D: int = 2, F2: int = 16, **kwargs):
+                 F1: int = 8, D: int = 2, F2: int = 16, sampling_rate: float = 100.0, **kwargs):
         super().__init__()
         self.n_channels = n_channels
         self.n_times = n_times
 
-        # Adaptive kernel size based on sampling rate / signal length
-        kern_len = min(64, n_times // 2)
+        # Adaptive kernel size: strictly preserve old logic for binary datasets
+        # to guarantee no degradation. For multiclass, use fs // 2 (e.g. 125 for 250Hz).
+        if num_classes <= 2:
+            kern_len = min(64, n_times // 2)
+        else:
+            kern_len = int(sampling_rate) // 2
+            
         kern_pad = kern_len // 2
 
         # Block 1 — temporal convolution
@@ -171,54 +176,66 @@ class CNN(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 3. TCN (replaces vanilla RNN — kept as "RNN" key in registry for compat)
+# 3. DeepConvNet
 # ---------------------------------------------------------------------------
-class TCN(nn.Module):
+class DeepConvNet(nn.Module):
     """
-    Temporal Convolutional Network with dilated causal convolutions,
-    prepended with a decoupled SpatialTemporalEncoder.
-    
+    DeepConvNet (Schirrmeister et al., 2017).
+    Standard deep convolutional network for EEG.
     Input:  (B, C, T)
     Output: (B, num_classes)
     """
     def __init__(self, n_channels: int, n_times: int, num_classes: int = 4,
-                 dropout: float = 0.5, hidden_size: int = 128, **kwargs):
+                 dropout: float = 0.5, **kwargs):
         super().__init__()
-        c1 = min(40, hidden_size)
-        # Prepend encoder to separate spatial electrode weights and temporal filtering
-        self.encoder = SpatialTemporalEncoder(
-            n_channels=n_channels, n_times=n_times, out_channels=c1, pool_len=4
+        
+        # Block 1
+        self.block1 = nn.Sequential(
+            nn.Conv2d(1, 25, kernel_size=(1, 10), bias=False),
+            nn.Conv2d(25, 25, kernel_size=(n_channels, 1), bias=False),
+            nn.BatchNorm2d(25),
+            nn.ELU(),
+            nn.MaxPool2d((1, 3)),
+            nn.Dropout(dropout)
         )
         
-        c2 = min(64, hidden_size)
-        c3 = min(128, hidden_size)
-
-        self.tcn = nn.Sequential(
-            # Dilated conv block 1 (receptive field: 7)
-            nn.Conv1d(c1, c2, kernel_size=7, padding=3, dilation=1),
-            nn.BatchNorm1d(c2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-
-            # Dilated conv block 2 (receptive field: 7*2=14)
-            nn.Conv1d(c2, c2, kernel_size=7, padding=6, dilation=2),
-            nn.BatchNorm1d(c2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-
-            # Dilated conv block 3 (receptive field: 5*4=20)
-            nn.Conv1d(c2, c3, kernel_size=5, padding=8, dilation=4),
-            nn.BatchNorm1d(c3),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-
-            nn.AdaptiveAvgPool1d(1),
+        # Block 2
+        self.block2 = nn.Sequential(
+            nn.Conv2d(25, 50, kernel_size=(1, 10), bias=False),
+            nn.BatchNorm2d(50),
+            nn.ELU(),
+            nn.MaxPool2d((1, 3)),
+            nn.Dropout(dropout)
         )
-        self.classifier = nn.Linear(c3, num_classes)
-
+        
+        # Block 3
+        self.block3 = nn.Sequential(
+            nn.Conv2d(50, 100, kernel_size=(1, 10), bias=False),
+            nn.BatchNorm2d(100),
+            nn.ELU(),
+            nn.MaxPool2d((1, 3)),
+            nn.Dropout(dropout)
+        )
+        
+        # Block 4
+        self.block4 = nn.Sequential(
+            nn.Conv2d(100, 200, kernel_size=(1, 10), bias=False),
+            nn.BatchNorm2d(200),
+            nn.ELU(),
+            nn.MaxPool2d((1, 3)),
+            nn.Dropout(dropout)
+        )
+        
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 2))
+        self.classifier = nn.Linear(200 * 2, num_classes)
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
-        x = self.tcn(x)
+        x = x.unsqueeze(1)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        x = self.block4(x)
+        x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
@@ -270,53 +287,50 @@ class LSTM(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# 5. CNN + RNN (now CNN + TCN)
+# 5. EEG Conformer (Convolutional Transformer)
 # ---------------------------------------------------------------------------
-class CNNTCN(nn.Module):
+class EEGConformer(nn.Module):
     """
-    Decoupled spatial-temporal CNN encoder producing a clean feature sequence
-    fed into dilated temporal convolutions. Replaces CNN+RNN.
-
-    Input:  (B, C, T)
-    Output: (B, num_classes)
+    Simplified EEG Conformer / Convolutional Transformer.
+    Extracts spatial-temporal features via CNN, then uses Self-Attention.
     """
     def __init__(self, n_channels: int, n_times: int, num_classes: int = 4,
-                 hidden_size: int = 128, dropout: float = 0.5, **kwargs):
+                 dropout: float = 0.5, hidden_size: int = 40, **kwargs):
         super().__init__()
-        c1 = min(40, hidden_size)
-        self.encoder = SpatialTemporalEncoder(
-            n_channels=n_channels, n_times=n_times, out_channels=c1, pool_len=2
-        )
         
-        c2 = min(64, hidden_size)
-        c3 = min(128, hidden_size)
-
-        # CNN encoder: 2 conv blocks
-        self.net = nn.Sequential(
-            nn.Conv1d(c1, c2, kernel_size=7, padding=3),
-            nn.BatchNorm1d(c2),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.MaxPool1d(2),
-
-            nn.Conv1d(c2, c3, kernel_size=5, padding=2),
-            nn.BatchNorm1d(c3),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.MaxPool1d(2),
-            
-            # Dilated temporal conv
-            nn.Conv1d(c3, c3, kernel_size=5, padding=4, dilation=2),
-            nn.BatchNorm1d(c3),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.AdaptiveAvgPool1d(1),
+        # Convolutional module (Spatial-Temporal)
+        self.temporal = nn.Conv2d(1, hidden_size, kernel_size=(1, 25), padding=(0, 12), bias=False)
+        self.spatial = nn.Conv2d(hidden_size, hidden_size, kernel_size=(n_channels, 1), bias=False)
+        self.bn = nn.BatchNorm2d(hidden_size)
+        self.pool = nn.AvgPool2d(kernel_size=(1, 7), stride=(1, 7))
+        
+        # Transformer module
+        self.d_model = hidden_size
+        self.n_heads = 8 if self.d_model % 8 == 0 else (4 if self.d_model % 4 == 0 else 1)
+        
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model, nhead=self.n_heads, dim_feedforward=self.d_model*4,
+            dropout=dropout, batch_first=True
         )
-        self.classifier = nn.Linear(c3, num_classes)
-
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        
+        self.adaptive_pool = nn.AdaptiveAvgPool1d(1)
+        self.classifier = nn.Linear(self.d_model, num_classes)
+        
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
-        x = self.net(x)
+        x = x.unsqueeze(1)
+        x = self.temporal(x)
+        x = self.spatial(x)
+        x = self.bn(x)
+        x = F.elu(x)
+        x = self.pool(x)
+        
+        # x shape: (B, hidden_size, 1, T_reduced)
+        x = x.squeeze(2).permute(0, 2, 1)  # (B, T_reduced, hidden_size)
+        
+        x = self.transformer(x)
+        x = x.permute(0, 2, 1) # (B, hidden_size, T_reduced)
+        x = self.adaptive_pool(x)
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
@@ -382,14 +396,172 @@ class CNNLSTM(nn.Module):
         return self.classifier(h)
 
 
+
+# ---------------------------------------------------------------------------
+# 7. EEG Graph Convolutional Network (ST-GCN)
+# ---------------------------------------------------------------------------
+class GraphConvBlock(nn.Module):
+    """
+    A single Spatial-Temporal Graph Convolution block.
+    
+    Spatial: Graph convolution via learnable adjacency matrix A.
+             X_out = ReLU(BN(A @ X @ W))
+    Temporal: 1D convolution along time axis after graph mixing.
+    
+    Includes a residual connection to prevent the "over-smoothing" problem
+    that plagues deep GCNs (where all node features converge after stacking).
+    """
+    def __init__(self, in_features: int, out_features: int, n_nodes: int,
+                 temporal_kernel: int = 9, dropout: float = 0.5):
+        super().__init__()
+        
+        # Learnable adjacency matrix (raw, before symmetrisation)
+        self.A_raw = nn.Parameter(torch.randn(n_nodes, n_nodes) * 0.01)
+        
+        # Graph convolution weights
+        self.W = nn.Linear(in_features, out_features, bias=False)
+        self.bn_graph = nn.BatchNorm1d(n_nodes)
+        
+        # Temporal convolution (operates along time after graph mixing)
+        self.temporal_conv = nn.Sequential(
+            nn.Conv1d(out_features, out_features,
+                      kernel_size=temporal_kernel,
+                      padding=temporal_kernel // 2, bias=False),
+            nn.BatchNorm1d(out_features),
+        )
+        
+        self.elu = nn.ELU()
+        self.dropout = nn.Dropout(dropout)
+        
+        # Residual projection (when in_features != out_features)
+        self.residual = (nn.Linear(in_features, out_features, bias=False)
+                         if in_features != out_features else nn.Identity())
+    
+    def _get_adjacency(self):
+        """Create a symmetric, normalised adjacency matrix with self-loops."""
+        # Symmetrise: A = (A_raw + A_raw^T) / 2
+        A_sym = (self.A_raw + self.A_raw.T) / 2.0
+        # Add self-loops (identity)
+        A = A_sym + torch.eye(A_sym.size(0), device=A_sym.device)
+        # Row-normalise so messages are averaged, not summed
+        D_inv = 1.0 / (A.sum(dim=1, keepdim=True) + 1e-6)
+        return A * D_inv
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        x: (B, N, T, F)  where N=nodes(channels), T=time, F=features
+        returns: (B, N, T, F_out)
+        """
+        B, N, T, F_in = x.shape
+        residual = self.residual(x)  # (B, N, T, F_out)
+        
+        # --- Spatial: Graph Convolution ---
+        # Feature projection: (B, N, T, F) -> (B, N, T, F_out)
+        x = self.W(x)
+        F_out = x.shape[-1]
+        # Reshape for adjacency multiplication: (B*T, N, F_out)
+        x = x.permute(0, 2, 1, 3).reshape(B * T, N, F_out)
+        A = self._get_adjacency()  # (N, N)
+        x = torch.bmm(A.unsqueeze(0).expand(B * T, -1, -1), x)  # (B*T, N, F_out)
+        # Reshape back: (B, N, T, F_out)
+        x = x.reshape(B, T, N, F_out).permute(0, 2, 1, 3)
+        
+        # BatchNorm over node dimension
+        x = x.reshape(B * T, N, F_out)
+        x = self.bn_graph(x)
+        x = x.reshape(B, N, T, F_out)
+        
+        x = self.elu(x)
+        
+        # --- Temporal: 1D Conv along time ---
+        # Reshape: (B*N, F_out, T)
+        x = x.reshape(B * N, T, F_out).permute(0, 2, 1)
+        x = self.temporal_conv(x)
+        x = self.elu(x)
+        # Reshape back: (B, N, T, F_out)
+        x = x.permute(0, 2, 1).reshape(B, N, T, F_out)
+        
+        # Residual + dropout
+        x = self.dropout(x + residual)
+        return x
+
+
+class EEG_GCN(nn.Module):
+    """
+    Spatial-Temporal Graph Convolutional Network for EEG classification.
+    
+    Key design decisions:
+    - Learnable symmetric adjacency matrix: adapts to any channel count
+      (critical for LS-BJOA which dynamically selects subsets).
+    - Residual connections in each GCN block to prevent over-smoothing.
+    - Temporal embedding via 1D conv before graph operations.
+    
+    Input:  (B, C, T) — C channels, T time steps
+    Output: (B, num_classes)
+    """
+    def __init__(self, n_channels: int, n_times: int, num_classes: int = 4,
+                 dropout: float = 0.5, hidden_size: int = 64, **kwargs):
+        super().__init__()
+        
+        feat_dim = min(32, hidden_size)
+        gcn_dim  = min(64, hidden_size)
+        
+        # Temporal embedding: project raw time-series into feature space per channel
+        # Input: (B, C, T) -> treat each channel independently
+        self.temporal_embed = nn.Sequential(
+            nn.Conv1d(1, feat_dim, kernel_size=25, padding=12, bias=False),
+            nn.BatchNorm1d(feat_dim),
+            nn.ELU(),
+            nn.AvgPool1d(4),  # downsample time by 4x
+        )
+        
+        # Two stacked ST-GCN blocks with increasing feature dimension
+        self.gcn1 = GraphConvBlock(feat_dim, gcn_dim, n_nodes=n_channels,
+                                   temporal_kernel=9, dropout=dropout)
+        self.gcn2 = GraphConvBlock(gcn_dim, gcn_dim, n_nodes=n_channels,
+                                   temporal_kernel=5, dropout=dropout)
+        
+        # Global pooling: average over both nodes and time
+        self.pool = nn.AdaptiveAvgPool1d(1)
+        self.classifier = nn.Linear(gcn_dim, num_classes)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, C, T = x.shape
+        
+        # --- Temporal Embedding ---
+        # Process each channel independently through the same temporal conv
+        # Reshape: (B*C, 1, T)
+        x = x.reshape(B * C, 1, T)
+        x = self.temporal_embed(x)       # (B*C, feat_dim, T_reduced)
+        feat_dim = x.shape[1]
+        T_red = x.shape[2]
+        # Reshape to graph format: (B, C, T_reduced, feat_dim)
+        x = x.reshape(B, C, feat_dim, T_red).permute(0, 1, 3, 2)
+        
+        # --- Graph Convolution Blocks ---
+        x = self.gcn1(x)  # (B, C, T_reduced, gcn_dim)
+        x = self.gcn2(x)  # (B, C, T_reduced, gcn_dim)
+        
+        # --- Readout ---
+        # Average over nodes: (B, T_reduced, gcn_dim)
+        x = x.mean(dim=1)
+        # Pool over time: (B, gcn_dim)
+        x = x.permute(0, 2, 1)  # (B, gcn_dim, T_reduced)
+        x = self.pool(x).squeeze(-1)  # (B, gcn_dim)
+        
+        return self.classifier(x)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 MODEL_REGISTRY = {
-    "EEGNet":   EEGNet,
-    "CNN":      CNN,
-    "RNN":      TCN,        # TCN replaces vanilla RNN (kept key for compat)
-    "LSTM":     LSTM,
-    "CNN+RNN":  CNNTCN,     # CNN+TCN replaces CNN+RNN (kept key for compat)
-    "CNN+LSTM": CNNLSTM,
+    "EEGNet":      EEGNet,
+    "CNN":         CNN,
+    "LSTM":        LSTM,
+    "CNN+LSTM":    CNNLSTM,
+    "DeepConvNet": DeepConvNet,
+    "Conformer":   EEGConformer,
+    "GraphNet":    EEG_GCN,
 }
+

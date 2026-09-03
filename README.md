@@ -4,7 +4,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.12%2B-ee4c2c.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-An AI-driven Brain-Computer Interface (BCI) system designed to restore communication and control for patients with Amyotrophic Lateral Sclerosis (ALS). This project utilizes non-invasive EEG signals, optimized through a custom **LS-BJOA** channel selection algorithm, to classify motor imagery with state-of-the-art Deep Learning models.
+An AI-driven Brain-Computer Interface (BCI) system designed to restore communication and control for patients with Amyotrophic Lateral Sclerosis (ALS). This project utilizes non-invasive EEG signals, optimized through a custom **LS-BJOA** channel selection algorithm, to classify motor imagery using state-of-the-art Deep Learning models.
 
 ---
 
@@ -14,17 +14,17 @@ Patients with ALS often lose the ability to communicate or interact with their e
 1.  **Imagined Speech Classification:** Translating neural patterns into communication output.
 2.  **Motor Imagery Classification:** Translating imagined movements into control signals for external devices (e.g., wheelchairs, robotic arms).
 
-By combining advanced signal optimization with hybrid neural networks, this system achieves high classification accuracy while reducing the computational overhead of high-density EEG caps.
+By combining advanced signal optimization with hybrid and graph-based neural networks, this system achieves high classification accuracy while reducing the computational overhead of high-density EEG caps.
 
 ---
 
 ## ✨ Key Features
 
 *   **Multimodal Output:** Supports both text-based communication and device control.
-*   **Intelligent Channel Selection:** Integrated **LS-BJOA** algorithm to identify the most discriminative EEG electrodes.
-*   **Hybrid Deep Learning:** Implementation of 6 distinct architectures including spatial-temporal hybrids (CNN+LSTM).
-*   **Cross-Dataset Support:** Unified pipeline for BCI Competition III and IV datasets.
-*   **Dynamic Adaptation:** Automatically handles binary and multi-class classification tasks.
+*   **Intelligent Channel Selection:** Integrated **LS-BJOA** algorithm to dynamically identify the most discriminative EEG electrodes.
+*   **Cutting-Edge Deep Learning:** Implementation of 7 distinct architectures including Convolutional Transformers (Conformer) and Spatial-Temporal Graph Convolutional Networks (ST-GCN).
+*   **Robust Evaluation:** Generates paper-ready summary tables including advanced BCI metrics like Cohen's Kappa ($\kappa$) and Channel Reduction Rate (CRR).
+*   **Cross-Dataset Support:** Unified pipeline for BCI Competition III and IV datasets handling both binary and multi-class tasks automatically.
 
 ---
 
@@ -35,7 +35,7 @@ graph TD
     A[Raw EEG Data] --> B[Preprocessing Pipeline]
     B --> C[LS-BJOA Channel Selection]
     C --> D[Optimized Channel Mask]
-    D --> E[Hybrid DL Models]
+    D --> E[Deep Learning Models]
     E --> F{Output Gateway}
     F --> G[Communication Interface]
     F --> H[Device Control]
@@ -73,41 +73,45 @@ To improve efficiency, we implement the **Logistic S-shaped Binary Jaya Optimiza
 
 *   **Objective:** Reduce the 118-channel input space to a minimal subset of high-impact electrodes.
 *   **Mechanism:** Uses a chaotic logistic map to prevent local optima and an S-shaped transfer function for binary masking.
-*   **Fitness Function:** A multi-objective function:
-    $$Fitness = w_1 \cdot F1_{score} + w_2 \cdot (1 - \frac{Selected\_Channels}{Total\_Channels})$$
+*   **Fitness Function:** A multi-objective function powered by bandpower features:
+    $$Fitness = 0.7 \cdot F1_{macro} + 0.2 \cdot Acc + 0.1 \cdot CRR$$
 
 ---
 
 ## 🧠 Deep Learning Models
 
-We implemented and compared six architectures to find the optimal balance of speed and accuracy:
+We implemented and compared 7 state-of-the-art architectures to find the optimal balance of speed and accuracy:
 
-1.  **EEGNet:** A compact convolutional network specifically for EEG.
-2.  **CNN (1D):** Extracts spatial features across the channel dimension.
-3.  **RNN:** Captures basic temporal dependencies in the signal.
-4.  **LSTM:** Addresses the vanishing gradient problem in long EEG sequences.
-5.  **CNN + RNN:** Hybrid architecture for spatial-temporal extraction.
-6.  **CNN + LSTM:** Our **primary hybrid architecture**, utilizing CNN for feature extraction and LSTM for sequential modeling.
+1.  **EEGNet:** A compact, highly efficient convolutional network specifically for EEG.
+2.  **CNN (ShallowConvNet):** Extracts spatial features across the channel dimension.
+3.  **LSTM:** Addresses the vanishing gradient problem in long EEG sequences.
+4.  **CNN + LSTM:** A hybrid architecture utilizing CNN for spatial feature extraction and LSTM for sequential modeling.
+5.  **DeepConvNet:** A deep hierarchical convolutional network for complex feature extraction.
+6.  **EEG Conformer:** A Convolutional Transformer utilizing Self-Attention to capture global dependencies.
+7.  **GraphNet (ST-GCN):** A Spatial-Temporal Graph Convolutional Network that learns a dynamic symmetric adjacency matrix to model brain functional connectivity.
 
 ---
 
 ## 📈 Evaluation Metrics
 
-| Task Type | Primary Metrics | Visualization |
-| :--- | :--- | :--- |
-| **Binary** | Accuracy, Precision, Recall, F1, ROC-AUC | Loss Curves, ROC Curves |
-| **Multi-class** | Accuracy, F1-Macro | Confusion Matrices |
+The pipeline automatically generates side-by-side comparisons of Full vs. Selected channels across all datasets, outputting the following metrics:
+
+*   **Accuracy (%)**
+*   **F1-Score (Macro)**
+*   **Cohen's Kappa ($\kappa$)** (Chance-corrected agreement)
+*   **ROC-AUC** (Macro One-vs-Rest for multiclass)
+*   **Channel Reduction Rate (CRR)**
+*   **Training Time**
 
 ---
 
 ## 🏁 Current Project Status
 
 ✅ **Dataset Preprocessing:** All benchmark datasets processed and normalized.  
-✅ **Model Suite:** All 6 DL models (EEGNet to CNN+LSTM) fully implemented.  
-✅ **Optimization Integration:** LS-BJOA module integrated with PyTorch pipeline.  
-✅ **Evaluation:** 5-Fold Cross-Validation with early stopping implemented.  
-✅ **Automation:** `run_experiment_with_cs.py` automates Full vs. CS comparisons.  
-⏳ **Experimentation:** Final large-scale training runs are currently in progress.
+✅ **Model Suite:** All 7 DL models fully implemented and verified.  
+✅ **Optimization Integration:** LS-BJOA module integrated with dynamic graph networks.  
+✅ **Evaluation Pipeline:** Robust cross-validation, class-weighted loss, and paper-ready CSV generation.  
+⏳ **Experimentation:** Final large-scale training runs are ready to execute.
 
 ---
 
@@ -115,9 +119,10 @@ We implemented and compared six architectures to find the optimal balance of spe
 
 ```text
 ├── channel_selection/    # LS-BJOA Optimizer & Fitness Logic
-├── models/               # PyTorch Model Architectures
-├── pipeline/             # Training, Eval, and Utils
+├── models/               # PyTorch Model Architectures (GCN, Conformer, etc.)
+├── pipeline/             # Training loops, Eval metrics, and Utils
 ├── processed_data/       # Preprocessed .npy datasets
+├── scratch/              # Integration and smoke tests
 ├── visualization/        # Topomaps and Fitness Curves
 ├── results/              # CSV reports and saved weights
 └── run_experiment_with_cs.py # Main Entry Point
@@ -129,7 +134,7 @@ We implemented and compared six architectures to find the optimal balance of spe
 
 ### Prerequisites
 * Python 3.8+
-* CUDA-capable GPU (recommended)
+* CUDA-capable GPU (highly recommended)
 
 ### Setup
 1.  Clone the repository:
@@ -143,7 +148,7 @@ We implemented and compared six architectures to find the optimal balance of spe
     ```
 
 ### Running Experiments
-To run the automated pipeline (Full channels vs. Optimized channels):
+To run the automated pipeline (Full channels vs. Optimized channels) and generate paper-style CSV tables:
 ```bash
 python run_experiment_with_cs.py
 ```
@@ -154,7 +159,6 @@ python run_experiment_with_cs.py
 
 *   **Real-time Streaming:** Integration with LSL for live EEG classification.
 *   **Hardware Integration:** Connecting classification output to a robotic arm.
-*   **Imagined Speech Decoding:** Expanding the multimodal aspect to include silent speech.
 *   **Online Learning:** Implementing adaptive BCI that updates as the patient's signals change.
 
 ---
@@ -166,3 +170,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Developed for the University Capstone Project.**  
 *Contributors: [Kunal Gupta]*
+

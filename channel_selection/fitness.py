@@ -22,20 +22,12 @@ from sklearn.metrics import f1_score, accuracy_score
 def _extract_bandpower_features(
     X: np.ndarray,
     sampling_rate: float = 100.0,
+    is_binary: bool = False,
 ) -> np.ndarray:
     """
-    Extract mu-band (8-13 Hz) and beta-band (13-30 Hz) average power
-    for each trial and selected channel.
-
-    Parameters
-    ----------
-    X : (n_trials, n_channels, n_times)
-    sampling_rate : sampling frequency in Hz
-
-    Returns
-    -------
-    features : (n_trials, n_channels * 2)
-        Concatenation of [mu_power, beta_power] per channel.
+    Extract bandpower features.
+    Binary: mu (8-13 Hz) and beta (13-30 Hz)
+    Multiclass: theta (4-8), mu (8-13), beta (13-30), gamma (30-50)
     """
     n_trials, n_channels, n_times = X.shape
 
@@ -56,7 +48,20 @@ def _extract_bandpower_features(
     mu_power = np.log(np.clip(mu_power, 1e-10, None))
     beta_power = np.log(np.clip(beta_power, 1e-10, None))
 
-    features = np.concatenate([mu_power, beta_power], axis=1)
+    if not is_binary:
+        theta_mask = (freqs >= 4) & (freqs < 8)
+        gamma_mask = (freqs > 30) & (freqs <= 50)
+        
+        theta_power = np.mean(psd[:, :, theta_mask], axis=2)
+        gamma_power = np.mean(psd[:, :, gamma_mask], axis=2)
+        
+        theta_power = np.log(np.clip(theta_power, 1e-10, None))
+        gamma_power = np.log(np.clip(gamma_power, 1e-10, None))
+        
+        features = np.concatenate([theta_power, mu_power, beta_power, gamma_power], axis=1)
+    else:
+        features = np.concatenate([mu_power, beta_power], axis=1)
+        
     return features
 
 
@@ -105,9 +110,9 @@ def evaluate_fitness(
     total_channels = len(mask_copy)
     channel_ratio = selected_channels / total_channels
 
-    # 4. Feature Extraction: Bandpower (mu + beta)
+    # 4. Feature Extraction: Bandpower (mu + beta for binary, +theta/gamma for multiclass)
     X_selected = X_train[:, mask_copy == 1, :]
-    X_flat = _extract_bandpower_features(X_selected, sampling_rate=sampling_rate)
+    X_flat = _extract_bandpower_features(X_selected, sampling_rate=sampling_rate, is_binary=is_binary)
 
     # 5. Stratified 80/20 train/val split
     min_class_count = np.min(np.bincount(y_train.astype(int)))

@@ -66,18 +66,18 @@ DATASETS = {
         "num_classes": 4,
         "sampling_rate": 250.0,
     },
-    # "BCI_IV_1": {
-    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
-    #     "is_binary": True,
-    #     "num_classes": 2,
-    #     "sampling_rate": 100.0,
-    # },
-    # "BCI_III_IVa": {
-    #     "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
-    #     "is_binary": True,
-    #     "num_classes": 2,
-    #     "sampling_rate": 100.0,
-    # },
+    "BCI_IV_1": {
+        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI_IV_1_mat-preprocessed"),
+        "is_binary": True,
+        "num_classes": 2,
+        "sampling_rate": 100.0,
+    },
+    "BCI_III_IVa": {
+        "dir": os.path.join(PROJECT_ROOT, "processed_data", "BCI-III-IVa-preprocessed"),
+        "is_binary": True,
+        "num_classes": 2,
+        "sampling_rate": 100.0,
+    },
 }
 
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results")
@@ -120,18 +120,165 @@ def save_cs_data_to_temp(
 
 
 def save_comparison_csv(rows: list, save_path: str) -> None:
-    """Write the comparison table as CSV."""
+    """Write the detailed per-subject comparison table as CSV."""
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     fieldnames = [
         "dataset", "subject", "model", "experiment",
-        "channels", "accuracy", "precision", "recall",
-        "f1", "roc_auc", "train_time_s",
+        "channels", "crr", "accuracy", "precision", "recall",
+        "f1", "kappa", "roc_auc", "train_time_s",
     ]
     with open(save_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"\n[main] Comparison CSV saved -> {save_path}")
+    print(f"\n[main] Detailed CSV saved -> {save_path}")
+
+
+def save_paper_style_csv(rows: list, save_dir: str, datasets_cfg: dict) -> None:
+    """
+    Generate paper-style summary CSVs (one per dataset).
+    
+    Each CSV has Full and Selected columns side-by-side, with results
+    averaged across all subjects, matching the MAIN_PAPER.pdf table format.
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Group rows by dataset
+    ds_rows = {}
+    for row in rows:
+        ds = row["dataset"]
+        if ds not in ds_rows:
+            ds_rows[ds] = []
+        ds_rows[ds].append(row)
+    
+    for ds_name, ds_data in ds_rows.items():
+        is_binary = datasets_cfg.get(ds_name, {}).get("is_binary", False)
+        
+        # Collect per-model averages for Full and CS
+        model_full = {}  # {model_name: {metric: [values]}}
+        model_cs = {}
+        
+        for row in ds_data:
+            model = row["model"]
+            exp = row["experiment"]
+            target = model_full if exp == "Full" else model_cs
+            
+            if model not in target:
+                target[model] = {"accuracy": [], "f1": [], "kappa": [],
+                                 "roc_auc": [], "channels": []}
+            
+            target[model]["accuracy"].append(float(row.get("accuracy", 0)))
+            target[model]["f1"].append(float(row.get("f1", 0)))
+            kappa_val = row.get("kappa", 0)
+            target[model]["kappa"].append(float(kappa_val) if kappa_val != "N/A" else 0.0)
+            auc_val = row.get("roc_auc", 0)
+            target[model]["roc_auc"].append(float(auc_val) if auc_val != "N/A" else 0.0)
+            target[model]["channels"].append(int(row.get("channels", 0)))
+        
+        # Compute averages
+        def _avg(lst):
+            return sum(lst) / len(lst) if lst else 0.0
+        
+        # Determine total channels from the Full experiment
+        total_ch = 0
+        for model, vals in model_full.items():
+            if vals["channels"]:
+                total_ch = int(_avg(vals["channels"]))
+                break
+        
+        # Build CSV rows
+        if is_binary:
+            fieldnames = [
+                "Model",
+                "Full Acc(%)", "Full F1-Score", "Full Kappa", "Full ROC-AUC",
+                "CS Acc(%)", "CS F1-Score", "CS Kappa", "CS ROC-AUC", "Active Ch.",
+            ]
+        else:
+            fieldnames = [
+                "Model",
+                "Full Acc(%)", "Full F1-Score", "Full Kappa",
+                "CS Acc(%)", "CS F1-Score", "CS Kappa", "Active Ch.",
+            ]
+        
+        csv_rows = []
+        all_models = list(dict.fromkeys(
+            [r["model"] for r in ds_data]
+        ))  # preserve insertion order
+        
+        for model in all_models:
+            full = model_full.get(model, {})
+            cs = model_cs.get(model, {})
+            
+            full_acc = _avg(full.get("accuracy", [])) * 100
+            full_f1 = _avg(full.get("f1", []))
+            full_kappa = _avg(full.get("kappa", []))
+            full_auc = _avg(full.get("roc_auc", []))
+            
+            cs_acc = _avg(cs.get("accuracy", [])) * 100
+            cs_f1 = _avg(cs.get("f1", []))
+            cs_kappa = _avg(cs.get("kappa", []))
+            cs_auc = _avg(cs.get("roc_auc", []))
+            active_ch = int(_avg(cs.get("channels", []))) if cs.get("channels") else 0
+            
+            if is_binary:
+                csv_rows.append({
+                    "Model": model,
+                    "Full Acc(%)": round(full_acc, 2),
+                    "Full F1-Score": round(full_f1, 3),
+                    "Full Kappa": round(full_kappa, 3),
+                    "Full ROC-AUC": round(full_auc, 3),
+                    "CS Acc(%)": round(cs_acc, 2),
+                    "CS F1-Score": round(cs_f1, 3),
+                    "CS Kappa": round(cs_kappa, 3),
+                    "CS ROC-AUC": round(cs_auc, 3),
+                    "Active Ch.": active_ch,
+                })
+            else:
+                csv_rows.append({
+                    "Model": model,
+                    "Full Acc(%)": round(full_acc, 2),
+                    "Full F1-Score": round(full_f1, 3),
+                    "Full Kappa": round(full_kappa, 3),
+                    "CS Acc(%)": round(cs_acc, 2),
+                    "CS F1-Score": round(cs_f1, 3),
+                    "CS Kappa": round(cs_kappa, 3),
+                    "Active Ch.": active_ch,
+                })
+        
+        csv_path = os.path.join(save_dir, f"{ds_name}_paper_summary.csv")
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        
+        # Also print the table to console
+        print(f"\n{'='*80}")
+        print(f"  Paper-Style Summary: {ds_name} "
+              f"(Full: {total_ch} ch)")
+        print(f"{'='*80}")
+        
+        # Print header
+        if is_binary:
+            print(f"{'Model':<15} | {'Full Acc%':>9} {'Full F1':>8} {'Full κ':>7} {'Full AUC':>9} | "
+                  f"{'CS Acc%':>8} {'CS F1':>7} {'CS κ':>6} {'CS AUC':>8} {'Act.Ch':>7}")
+        else:
+            print(f"{'Model':<15} | {'Full Acc%':>9} {'Full F1':>8} {'Full κ':>7} | "
+                  f"{'CS Acc%':>8} {'CS F1':>7} {'CS κ':>6} {'Act.Ch':>7}")
+        print("-" * 80)
+        
+        for r in csv_rows:
+            if is_binary:
+                print(f"{r['Model']:<15} | {r['Full Acc(%)']:>9.2f} {r['Full F1-Score']:>8.3f} "
+                      f"{r['Full Kappa']:>7.3f} {r['Full ROC-AUC']:>9.3f} | "
+                      f"{r['CS Acc(%)']:>8.2f} {r['CS F1-Score']:>7.3f} "
+                      f"{r['CS Kappa']:>6.3f} {r['CS ROC-AUC']:>8.3f} {r['Active Ch.']:>7}")
+            else:
+                print(f"{r['Model']:<15} | {r['Full Acc(%)']:>9.2f} {r['Full F1-Score']:>8.3f} "
+                      f"{r['Full Kappa']:>7.3f} | "
+                      f"{r['CS Acc(%)']:>8.2f} {r['CS F1-Score']:>7.3f} "
+                      f"{r['CS Kappa']:>6.3f} {r['Active Ch.']:>7}")
+        
+        print(f"\n[main] Paper summary CSV saved -> {csv_path}")
 
 
 def print_comparison_row(
@@ -147,11 +294,14 @@ def print_comparison_row(
     """Pretty-print one result row."""
     acc   = metrics.get("accuracy",  0)
     f1    = metrics.get("f1",        0)
+    kappa = metrics.get("kappa",     "N/A")
     auc   = metrics.get("roc_auc",   "N/A")
-    auc_s = f"{auc:.4f}" if isinstance(auc, float) else auc
+    
+    auc_s   = f"{auc:.4f}" if isinstance(auc, float) else auc
+    kappa_s = f"{kappa:.4f}" if isinstance(kappa, float) else kappa
 
     print(f"[{exp_label:4s}]  Channels: {n_channels:3d} | "
-          f"Acc: {acc:.4f} | F1: {f1:.4f} | ROC-AUC: {auc_s}")
+          f"Acc: {acc:.4f} | F1: {f1:.4f} | Kappa: {kappa_s} | ROC-AUC: {auc_s}")
 
     if selected_channels is not None:
         print(f"Selected channels: {selected_channels}")
@@ -226,6 +376,7 @@ def main():
                     config=CONFIG,
                     model_registry=MODEL_REGISTRY,
                     device=device,
+                    sampling_rate=ds_cfg.get("sampling_rate", 100.0),
                 )
             except Exception as exc:
                 print(f"[main] ERROR in full experiment for {subject_id}: {exc}")
@@ -307,6 +458,7 @@ def main():
                     config=CONFIG,
                     model_registry=MODEL_REGISTRY,
                     device=device,
+                    sampling_rate=ds_cfg.get("sampling_rate", 100.0),
                 )
             except Exception as exc:
                 print(f"[main] ERROR in CS experiment for {subject_id}: {exc}")
@@ -334,10 +486,13 @@ def main():
                         "dataset": ds_name, "subject": subject_id,
                         "model": model_name, "experiment": "Full",
                         "channels": n_channels_full,
+                        "crr": 0.0,
                         "accuracy":  round(full_results[model_name].get("accuracy", 0), 6),
                         "precision": round(full_results[model_name].get("precision", 0), 6),
                         "recall":    round(full_results[model_name].get("recall", 0), 6),
                         "f1":        round(full_results[model_name].get("f1", 0), 6),
+                        "kappa":     round(full_results[model_name].get("kappa", 0), 6)
+                                     if "kappa" in full_results[model_name] else "N/A",
                         "roc_auc":   round(full_results[model_name].get("roc_auc", 0), 6)
                                      if "roc_auc" in full_results[model_name] else "N/A",
                         "train_time_s": round(per_model_time, 1),
@@ -351,14 +506,18 @@ def main():
                         fitness_history=fitness_history,
                     )
                     per_model_time = cs_time / max(len(cs_results), 1)
+                    crr_val = round(1.0 - (n_selected / n_channels_full), 6) if n_channels_full else 0.0
                     all_csv_rows.append({
                         "dataset": ds_name, "subject": subject_id,
                         "model": model_name, "experiment": "CS",
                         "channels": n_selected,
+                        "crr": crr_val,
                         "accuracy":  round(cs_results[model_name].get("accuracy", 0), 6),
                         "precision": round(cs_results[model_name].get("precision", 0), 6),
                         "recall":    round(cs_results[model_name].get("recall", 0), 6),
                         "f1":        round(cs_results[model_name].get("f1", 0), 6),
+                        "kappa":     round(cs_results[model_name].get("kappa", 0), 6)
+                                     if "kappa" in cs_results[model_name] else "N/A",
                         "roc_auc":   round(cs_results[model_name].get("roc_auc", 0), 6)
                                      if "roc_auc" in cs_results[model_name] else "N/A",
                         "train_time_s": round(per_model_time, 1),
@@ -377,6 +536,9 @@ def main():
     if all_csv_rows:
         csv_path = os.path.join(RESULTS_DIR, "channel_selection_comparison.csv")
         save_comparison_csv(all_csv_rows, csv_path)
+        
+        # Paper-style summary tables (one CSV per dataset)
+        save_paper_style_csv(all_csv_rows, RESULTS_DIR, DATASETS)
 
     total_elapsed = time.time() - total_start
     print(f"\n[main] Total runtime: {total_elapsed / 60:.1f} minutes")
